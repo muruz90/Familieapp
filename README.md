@@ -35,7 +35,8 @@ Scriptet installerer Docker hvis nødvendigt, henter koden til `/opt/familie-app
 `familie.goblinaiapp.com` (eksisterende sites røres ikke, og `apache2ctl configtest` køres før reload)
 og opretter en daglig backup i `/opt/familie-app/data/backup`.
 
-I Cloudflare: opret en A-record `familie` → serverens IP (Proxied).
+Opret en DNS A-record `familie` → serverens IP (DNS ligger hos Hetzner), og hent derefter et certifikat:
+`certbot --apache -d familie.goblinaiapp.com`.
 
 Første gang siden åbnes, oprettes den første forælder.
 

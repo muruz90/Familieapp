@@ -76,7 +76,7 @@ if [ -n "$CERT" ]; then
   echo "Genbruger certifikatet $CERT (dækker $DOMAIN)"
   SELF_SIGNED=0
 else
-  # Intet eksisterende certifikat dækker domænet: lav et selvsigneret, som Cloudflare (SSL "Full") accepterer.
+  # Intet certifikat dækker domænet endnu: lav et midlertidigt selvsigneret, indtil certbot har hentet et rigtigt.
   CERT=/etc/ssl/certs/familie-app.crt; KEY=/etc/ssl/private/familie-app.key
   [ -f "$CERT" ] || openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$DOMAIN" \
     -addext "subjectAltName=DNS:$DOMAIN" -keyout "$KEY" -out "$CERT" 2>/dev/null
@@ -114,11 +114,11 @@ EOF
 
 say "Færdig"
 echo "Appen kører i Docker på port $PORT, og Apache sender $DOMAIN videre til den."
-echo "Mangler: DNS-record i Cloudflare: A  ${DOMAIN%%.*}  167.233.208.191  (Proxied)."
+echo "Mangler (første gang): DNS A-record  ${DOMAIN%%.*}  ->  serverens IP."
 if [ "$SELF_SIGNED" = 1 ]; then
   echo
-  echo "Bemærk: Der bruges et selvsigneret certifikat mellem Cloudflare og serveren."
-  echo "Det virker, når Cloudflare står på SSL/TLS-tilstand 'Full'. Står den på 'Full (strict)', så sig det til Claude."
+  echo "Bemærk: Der bruges et midlertidigt selvsigneret certifikat. Når DNS peger på serveren, så hent et rigtigt:"
+  echo "  certbot --apache -d $DOMAIN"
 fi
 echo
 echo "Opdatering senere:  bash $DIR/deploy/install.sh"
