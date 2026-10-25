@@ -4,8 +4,8 @@ services:
     container_name: familie-app
     restart: unless-stopped
     environment:
-      APP_URL: https://familie.goblinaiapp.com
+      APP_URL: ${APP_URL:-https://familie.goblinaiapp.com}
     ports:
-      - "127.0.0.1:3100:3000"
+      - "127.0.0.1:${FAMILIE_PORT:-3100}:3000"
     volumes:
       - ./data:/data

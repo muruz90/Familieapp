@@ -21,36 +21,22 @@ npm test        # enhedstest af indkøbsliste, beløb og kalenderfeed
 
 Data ligger i SQLite i `data/familie.db` (sti kan ændres med `DATA_DIR`).
 
-## Drift på serveren (Docker)
+## Drift på serveren
+
+Serveren kører Apache (bruges også af andre sites). Installation og opdatering, som root på serveren:
 
 ```bash
-git clone https://github.com/muruz90/Familieapp.git familie-app
-cd familie-app
-docker compose up -d --build
+curl -fsSL https://raw.githubusercontent.com/muruz90/Familieapp/main/deploy/install.sh -o install.sh
+bash install.sh
 ```
 
-Appen lytter på `127.0.0.1:3100`. Sæt en reverse proxy foran, fx nginx:
+Scriptet installerer Docker hvis nødvendigt, henter koden til `/opt/familie-app`, starter appen på
+`127.0.0.1:3100` (eller næste ledige port, gemt i `.env`), tilføjer et nyt Apache-site for
+`familie.goblinaiapp.com` (eksisterende sites røres ikke, og `apache2ctl configtest` køres før reload)
+og opretter en daglig backup i `/opt/familie-app/data/backup`.
 
-```nginx
-server {
-    listen 80;
-    server_name familie.goblinaiapp.com;
-    location / {
-        proxy_pass http://127.0.0.1:3100;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
-eller Caddy: `familie.goblinaiapp.com { reverse_proxy 127.0.0.1:3100 }`
-
-I Cloudflare: opret en A-record `familie` → serverens IP (proxied, SSL-tilstand *Full*).
+I Cloudflare: opret en A-record `familie` → serverens IP (Proxied).
 
 Første gang siden åbnes, oprettes den første forælder.
 
-**Backup**: kopiér mappen `data/` (fx dagligt med cron).
-
-**Opdatering**: `git pull && docker compose up -d --build`
+**Opdatering**: `bash /opt/familie-app/deploy/install.sh`
