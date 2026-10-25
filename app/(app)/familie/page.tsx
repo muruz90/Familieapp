@@ -29,6 +29,12 @@ export default async function FamilyPage() {
                     <label>Navn<input name="name" defaultValue={m.name} /></label>
                     <label>Farve<input name="color" type="color" defaultValue={m.color} /></label>
                     <label>Ny adgangskode<input name="password" type="text" placeholder="Uændret" /></label>
+                    <label>Rolle
+                      <select name="role" defaultValue={m.role}>
+                        <option value="child">Barn</option>
+                        <option value="parent">Forælder</option>
+                      </select>
+                    </label>
                   </div>
                   <div className="row">
                     <button type="submit" className="small">Gem</button>

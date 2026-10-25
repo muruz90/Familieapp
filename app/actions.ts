@@ -73,6 +73,12 @@ export async function updateMember(fd: FormData) {
   const color = str(fd, "color");
   const password = String(fd.get("password") ?? "");
   if (name) db().prepare("UPDATE users SET name = ?, color = ? WHERE id = ?").run(name, color || "#4f7cff", id);
+  const role = str(fd, "role");
+  if (role === "parent" || role === "child") {
+    // Der skal altid være mindst én forælder tilbage, ellers kan ingen styre appen.
+    const parents = (db().prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'parent' AND id != ?").get(id) as { n: number }).n;
+    if (role === "parent" || parents > 0) db().prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+  }
   if (password.length >= 4) {
     db().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), id);
     if (id !== me.id) db().prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
