@@ -59,21 +59,22 @@ export type Task = {
 
 export function activeTasks(): Task[] {
   return db()
-    .prepare(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.active = 1 ORDER BY t.repeat, t.title`)
+    .prepare(`SELECT t.*, u.name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.active = 1
+       AND NOT (t.repeat = 'once' AND EXISTS (SELECT 1 FROM task_completions c WHERE c.task_id = t.id AND c.status = 'approved'))
+       ORDER BY CASE t.repeat WHEN 'daily' THEN 0 WHEN 'weekly' THEN 1 ELSE 2 END, t.title`)
     .all() as Task[];
 }
 
 export type Completion = { id: number; task_id: number; user_id: number; status: string; amount: number; completed_at: string; title: string; user_name: string };
 
-export type TaskState = { avail: Availability; current: Completion[] };
+export type TaskState = { avail: Availability; current: Completion[]; takenBy?: string };
 
-/** Barnets ikke-afviste udførelser (lokal dato) af en opgave. */
-export function completionDates(taskId: number, userId: number): string[] {
-  return (
-    db()
-      .prepare("SELECT completed_on FROM task_completions WHERE task_id = ? AND user_id = ? AND status != 'rejected'")
-      .all(taskId, userId) as { completed_on: string }[]
-  ).map((r) => r.completed_on);
+/** Ikke-afviste udførelser (lokal dato) af en opgave, for ét barn eller (uden userId) for alle. */
+export function completionDates(taskId: number, userId?: number): string[] {
+  const rows = userId
+    ? db().prepare("SELECT completed_on FROM task_completions WHERE task_id = ? AND user_id = ? AND status != 'rejected'").all(taskId, userId)
+    : db().prepare("SELECT completed_on FROM task_completions WHERE task_id = ? AND status != 'rejected'").all(taskId);
+  return (rows as { completed_on: string }[]).map((r) => r.completed_on);
 }
 
 /** Status for hver (opgave, barn): må den udføres nu, og hvilke udførelser hører til den aktuelle periode. */
@@ -91,9 +92,15 @@ export function taskStates(tasks: Task[], kids: User[]): Map<string, TaskState> 
   const map = new Map<string, TaskState>();
   for (const t of tasks) {
     const period = taskPeriod(t.repeat);
+    // En fri opgave kan kun tages af ét barn; de andre ser, hvem der har taget den.
+    const taker = t.repeat === "once" ? rows.find((r) => r.task_id === t.id) : undefined;
     for (const k of kids) {
       if (t.assigned_to && t.assigned_to !== k.id) continue;
       const list = grouped.get(`${t.id}:${k.id}`) ?? [];
+      if (taker && taker.user_id !== k.id) {
+        map.set(`${t.id}:${k.id}`, { avail: { allowed: false, doneInPeriod: 0 }, current: [], takenBy: taker.user_name });
+        continue;
+      }
       map.set(`${t.id}:${k.id}`, {
         avail: availability(t.repeat, t.times_per_week, list.map((c) => c.completed_on), today),
         current: list.filter((c) => c.period === period),

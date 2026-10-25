@@ -97,6 +97,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                         {t.repeat === "weekly" && t.times_per_week > 1 && (
                           <span className="muted">{st.avail.doneInPeriod}/{t.times_per_week} denne uge</span>
                         )}
+                        {st.takenBy && !isParent && <span className="muted">{st.takenBy} har taget den</span>}
                         {st.avail.allowed ? (
                           <form action={completeTask} className="inline">
                             <input type="hidden" name="task_id" value={t.id} />

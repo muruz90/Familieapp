@@ -11,7 +11,7 @@ type Props = {
 
 export default function TaskForm({ kids, task }: Props) {
   const [state, action, pending] = useActionState(saveTask, undefined);
-  const [repeat, setRepeat] = useState(task?.repeat ?? "daily");
+  const [repeat, setRepeat] = useState(task?.repeat ?? "once");
   const [times, setTimes] = useState(task?.times_per_week ?? 1);
   const gap = times >= 2 ? Math.floor(7 / times) : 0;
   return (
@@ -30,9 +30,9 @@ export default function TaskForm({ kids, task }: Props) {
         </label>
         <label>Gentagelse
           <select name="repeat" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+            <option value="once">Fri opgave (når det passer)</option>
             <option value="daily">Hver dag</option>
             <option value="weekly">Hver uge</option>
-            <option value="once">Én gang</option>
           </select>
         </label>
         {repeat === "weekly" && (
@@ -44,6 +44,7 @@ export default function TaskForm({ kids, task }: Props) {
         )}
       </div>
       {repeat === "weekly" && gap > 0 && <p className="muted">Der skal gå mindst {gap} dage mellem hver gang.</p>}
+      {repeat === "once" && <p className="muted">Opgaven ligger klar, til et barn tager den. Når den er godkendt, forsvinder den fra listen.</p>}
       <FormMessage state={state} ok={task ? undefined : "Opgaven er oprettet."} />
       <div className="row">
         <button type="submit" disabled={pending}>{task ? "Gem ændringer" : "Opret opgave"}</button>

@@ -135,7 +135,8 @@ export async function completeTask(fd: FormData) {
     | undefined;
   if (!task || (task.assigned_to && task.assigned_to !== forUser)) return;
   const today = todayLocal();
-  if (!availability(task.repeat, task.times_per_week, completionDates(task.id, forUser), today).allowed) return;
+  const dates = task.repeat === "once" ? completionDates(task.id) : completionDates(task.id, forUser);
+  if (!availability(task.repeat, task.times_per_week, dates, today).allowed) return;
   const period = taskPeriod(task.repeat);
   const tx = db().transaction(() => {
     const status = me.role === "parent" ? "approved" : "pending";
