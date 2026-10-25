@@ -2,6 +2,8 @@
 # Installerer eller opdaterer familie-appen på en Ubuntu-server med Apache.
 # Kør som root:  bash install.sh
 # Rører ikke eksisterende Apache-sites; tilføjer kun et nyt site for $DOMAIN.
+# Alt ligger i main(), så scriptet også virker med "curl ... | bash".
+main() {
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-familie.goblinaiapp.com}"
@@ -120,3 +122,6 @@ if [ "$SELF_SIGNED" = 1 ]; then
 fi
 echo
 echo "Opdatering senere:  bash $DIR/deploy/install.sh"
+}
+
+main "$@" </dev/null
