@@ -133,7 +133,18 @@ export function openDb(file?: string): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(schema);
+  migrate(db);
   return db;
+}
+
+function migrate(db: Database.Database) {
+  const has = (table: string, column: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+  if (!has("tasks", "times_per_week")) db.exec("ALTER TABLE tasks ADD COLUMN times_per_week INTEGER NOT NULL DEFAULT 1");
+  if (!has("task_completions", "completed_on")) {
+    db.exec("ALTER TABLE task_completions ADD COLUMN completed_on TEXT");
+    db.exec("UPDATE task_completions SET completed_on = substr(completed_at, 1, 10) WHERE completed_on IS NULL");
+  }
 }
 
 export function db(): Database.Database {

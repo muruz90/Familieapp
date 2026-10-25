@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { aggregate, type ShoppingItem } from "./shopping";
-import { taskPeriod } from "./format";
+import { taskPeriod, todayLocal } from "./format";
+import { availability, type Availability } from "./tasks";
 import type { User } from "./auth";
 
 export function listKey(from: string, to: string) {
@@ -52,6 +53,7 @@ export type Task = {
   reward: number;
   assigned_to: number | null;
   repeat: "once" | "daily" | "weekly";
+  times_per_week: number;
   assignee_name: string | null;
 };
 
@@ -63,17 +65,41 @@ export function activeTasks(): Task[] {
 
 export type Completion = { id: number; task_id: number; user_id: number; status: string; amount: number; completed_at: string; title: string; user_name: string };
 
-/** Status for hver (opgave, barn) i den aktuelle periode (i dag / denne uge / nogensinde). */
-export function currentCompletions(): Map<string, Completion> {
+export type TaskState = { avail: Availability; current: Completion[] };
+
+/** Barnets ikke-afviste udførelser (lokal dato) af en opgave. */
+export function completionDates(taskId: number, userId: number): string[] {
+  return (
+    db()
+      .prepare("SELECT completed_on FROM task_completions WHERE task_id = ? AND user_id = ? AND status != 'rejected'")
+      .all(taskId, userId) as { completed_on: string }[]
+  ).map((r) => r.completed_on);
+}
+
+/** Status for hver (opgave, barn): må den udføres nu, og hvilke udførelser hører til den aktuelle periode. */
+export function taskStates(tasks: Task[], kids: User[]): Map<string, TaskState> {
   const rows = db()
     .prepare(
-      `SELECT c.*, t.title, t.repeat, u.name AS user_name FROM task_completions c
+      `SELECT c.*, t.title, u.name AS user_name FROM task_completions c
        JOIN tasks t ON t.id = c.task_id JOIN users u ON u.id = c.user_id
-       WHERE c.status != 'rejected' AND t.active = 1`,
+       WHERE c.status != 'rejected' AND t.active = 1 ORDER BY c.completed_on, c.id`,
     )
-    .all() as (Completion & { period: string; repeat: Task["repeat"] })[];
-  const map = new Map<string, Completion>();
-  for (const r of rows) if (r.period === taskPeriod(r.repeat)) map.set(`${r.task_id}:${r.user_id}`, r);
+    .all() as (Completion & { period: string; completed_on: string })[];
+  const grouped = new Map<string, typeof rows>();
+  for (const r of rows) grouped.set(`${r.task_id}:${r.user_id}`, [...(grouped.get(`${r.task_id}:${r.user_id}`) ?? []), r]);
+  const today = todayLocal();
+  const map = new Map<string, TaskState>();
+  for (const t of tasks) {
+    const period = taskPeriod(t.repeat);
+    for (const k of kids) {
+      if (t.assigned_to && t.assigned_to !== k.id) continue;
+      const list = grouped.get(`${t.id}:${k.id}`) ?? [];
+      map.set(`${t.id}:${k.id}`, {
+        avail: availability(t.repeat, t.times_per_week, list.map((c) => c.completed_on), today),
+        current: list.filter((c) => c.period === period),
+      });
+    }
+  }
   return map;
 }
 

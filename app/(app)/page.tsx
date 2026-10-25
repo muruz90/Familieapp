@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { activeTasks, balances, currentCompletions, eventsFrom, mealsBetween, pendingCompletions } from "@/lib/queries";
+import { activeTasks, balances, eventsFrom, mealsBetween, pendingCompletions, taskStates } from "@/lib/queries";
 import { completeTask } from "@/app/actions";
 import { kr, prettyDate, todayLocal } from "@/lib/format";
 
@@ -12,8 +12,9 @@ export default async function HomePage() {
   const events = eventsFrom(today, 5);
   const allBalances = balances();
   const pending = isParent ? pendingCompletions() : [];
-  const status = currentCompletions();
-  const myTasks = isParent ? [] : activeTasks().filter((t) => (!t.assigned_to || t.assigned_to === me.id) && !status.has(`${t.id}:${me.id}`));
+  const tasks = isParent ? [] : activeTasks();
+  const states = taskStates(tasks, [me]);
+  const myTasks = tasks.filter((t) => states.get(`${t.id}:${me.id}`)?.avail.allowed);
   const mine = allBalances.find((b) => b.user.id === me.id);
 
   return (

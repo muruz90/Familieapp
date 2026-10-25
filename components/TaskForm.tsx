@@ -1,16 +1,19 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveTask } from "@/app/actions";
 import FormMessage from "./FormMessage";
 
 type Props = {
   kids: { id: number; name: string }[];
-  task?: { id: number; title: string; description: string; reward: number; assigned_to: number | null; repeat: string };
+  task?: { id: number; title: string; description: string; reward: number; assigned_to: number | null; repeat: string; times_per_week: number };
 };
 
 export default function TaskForm({ kids, task }: Props) {
   const [state, action, pending] = useActionState(saveTask, undefined);
+  const [repeat, setRepeat] = useState(task?.repeat ?? "daily");
+  const [times, setTimes] = useState(task?.times_per_week ?? 1);
+  const gap = times >= 2 ? Math.floor(7 / times) : 0;
   return (
     <form action={action} className="card" key={task?.id ?? "new"}>
       <h2>{task ? "Ret opgave" : "Ny opgave"}</h2>
@@ -26,13 +29,21 @@ export default function TaskForm({ kids, task }: Props) {
           </select>
         </label>
         <label>Gentagelse
-          <select name="repeat" defaultValue={task?.repeat ?? "daily"}>
+          <select name="repeat" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
             <option value="daily">Hver dag</option>
             <option value="weekly">Hver uge</option>
             <option value="once">Én gang</option>
           </select>
         </label>
+        {repeat === "weekly" && (
+          <label>Gange om ugen
+            <select name="times_per_week" value={times} onChange={(e) => setTimes(Number(e.target.value))}>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        )}
       </div>
+      {repeat === "weekly" && gap > 0 && <p className="muted">Der skal gå mindst {gap} dage mellem hver gang.</p>}
       <FormMessage state={state} ok={task ? undefined : "Opgaven er oprettet."} />
       <div className="row">
         <button type="submit" disabled={pending}>{task ? "Gem ændringer" : "Opret opgave"}</button>

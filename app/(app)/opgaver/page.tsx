@@ -1,23 +1,22 @@
 import { requireUser } from "@/lib/auth";
-import { activeTasks, children, currentCompletions, pendingCompletions } from "@/lib/queries";
+import { activeTasks, children, pendingCompletions, taskStates } from "@/lib/queries";
 import { archiveTask, completeTask, reviewCompletion, undoCompletion } from "@/app/actions";
-import { kr } from "@/lib/format";
+import { kr, prettyDate } from "@/lib/format";
+import { repeatText } from "@/lib/taskText";
 import TaskForm from "@/components/TaskForm";
-
-const repeatLabel = { daily: "Hver dag", weekly: "Hver uge", once: "Én gang" } as const;
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ ret?: string }> }) {
   const me = await requireUser();
   const isParent = me.role === "parent";
   const kids = children();
   const tasks = activeTasks();
-  const status = currentCompletions();
   const pending = isParent ? pendingCompletions() : [];
   const editId = Number((await searchParams).ret);
   const editing = isParent ? tasks.find((t) => t.id === editId) : undefined;
 
   const visible = isParent ? tasks : tasks.filter((t) => !t.assigned_to || t.assigned_to === me.id);
   const people = isParent ? kids : [me];
+  const states = taskStates(visible, people);
 
   return (
     <>
@@ -59,7 +58,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <div>
                   <strong>{t.title}</strong>
                   <div className="muted">
-                    {repeatLabel[t.repeat]} · {kr(t.reward)}
+                    {repeatText(t.repeat, t.times_per_week)} · {kr(t.reward)}
                     {isParent && ` · ${t.assignee_name ?? "Alle børn"}`}
                   </div>
                   {t.description && <div className="muted">{t.description}</div>}
@@ -78,11 +77,12 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 {people
                   .filter((p) => !t.assigned_to || t.assigned_to === p.id)
                   .map((p) => {
-                    const c = status.get(`${t.id}:${p.id}`);
+                    const st = states.get(`${t.id}:${p.id}`);
+                    if (!st) return null;
                     return (
                       <span key={p.id} className="row">
-                        {c ? (
-                          <>
+                        {st.current.map((c) => (
+                          <span key={c.id} className="row">
                             <span className={`badge ${c.status === "approved" ? "good" : "warn"}`}>
                               {isParent ? `${p.name}: ` : ""}{c.status === "approved" ? "Godkendt ✓" : "Venter på godkendelse"}
                             </span>
@@ -92,13 +92,21 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                                 <button className="link" type="submit">fortryd</button>
                               </form>
                             )}
-                          </>
-                        ) : (
+                          </span>
+                        ))}
+                        {t.repeat === "weekly" && t.times_per_week > 1 && (
+                          <span className="muted">{st.avail.doneInPeriod}/{t.times_per_week} denne uge</span>
+                        )}
+                        {st.avail.allowed ? (
                           <form action={completeTask} className="inline">
                             <input type="hidden" name="task_id" value={t.id} />
                             <input type="hidden" name="user_id" value={p.id} />
                             <button className="small" type="submit">{isParent ? `${p.name} har gjort det` : "Færdig ✓"}</button>
                           </form>
+                        ) : (
+                          st.avail.nextDate && t.repeat !== "daily" && (
+                            <span className="muted">{isParent ? `${p.name}: ` : ""}næste gang {prettyDate(st.avail.nextDate).toLowerCase()}</span>
+                          )
                         )}
                       </span>
                     );

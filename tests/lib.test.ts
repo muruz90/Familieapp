@@ -55,3 +55,24 @@ test("kalenderfeed er gyldigt ICS", () => {
   assert.ok(ics.endsWith("END:VCALENDAR\r\n"));
   for (const line of ics.split("\r\n")) assert.ok(Buffer.byteLength(line) <= 75);
 });
+
+test("ugentlige opgaver: antal pr. uge og mindst X dage imellem", async () => {
+  const { availability, minGapDays } = await import("../lib/tasks.ts");
+  assert.equal(minGapDays(2), 3);
+  assert.equal(minGapDays(3), 2);
+  assert.equal(minGapDays(1), 0);
+  // 2 gange om ugen: mandag udført -> tirsdag og onsdag spærret, torsdag tilladt
+  assert.deepEqual(availability("weekly", 2, ["2026-10-19"], "2026-10-20"), { allowed: false, doneInPeriod: 1, nextDate: "2026-10-22" });
+  assert.equal(availability("weekly", 2, ["2026-10-19"], "2026-10-22").allowed, true);
+  // to gange udført -> spærret resten af ugen
+  const full = availability("weekly", 2, ["2026-10-19", "2026-10-22"], "2026-10-25");
+  assert.equal(full.allowed, false);
+  assert.equal(full.nextDate, "2026-10-26");
+  // afstanden gælder også hen over ugeskiftet: søndag udført -> mandag spærret
+  assert.equal(availability("weekly", 2, ["2026-10-25"], "2026-10-26").allowed, false);
+  assert.equal(availability("weekly", 2, ["2026-10-25"], "2026-10-28").allowed, true);
+  // 1 gang om ugen styres kun af ugen
+  assert.equal(availability("weekly", 1, ["2026-10-25"], "2026-10-26").allowed, true);
+  assert.equal(availability("daily", 1, ["2026-10-25"], "2026-10-25").allowed, false);
+  assert.equal(availability("once", 1, ["2026-10-01"], "2026-10-25").allowed, false);
+});

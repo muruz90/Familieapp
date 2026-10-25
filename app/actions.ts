@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
-import { parseKr, taskPeriod } from "@/lib/format";
-import { listKey } from "@/lib/queries";
+import { parseKr, taskPeriod, todayLocal } from "@/lib/format";
+import { availability } from "@/lib/tasks";
+import { completionDates, listKey } from "@/lib/queries";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
 const int = (fd: FormData, key: string) => {
@@ -104,12 +105,13 @@ export async function saveTask(_: FormState, fd: FormData): Promise<FormState> {
   const reward = parseKr(str(fd, "reward") || "0");
   const assigned = int(fd, "assigned_to") || null;
   const repeat = ["once", "daily", "weekly"].includes(str(fd, "repeat")) ? str(fd, "repeat") : "once";
+  const timesPerWeek = repeat === "weekly" ? Math.min(7, Math.max(1, int(fd, "times_per_week") ?? 1)) : 1;
   if (!title) return { error: "Opgaven skal have en titel." };
   if (reward === null || reward < 0) return { error: "Beløbet er ikke gyldigt." };
   if (id) {
-    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, id);
+    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, id);
   } else {
-    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, created_by) VALUES (?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, me.id);
+    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, me.id);
   }
   revalidatePath("/", "layout");
   if (id) redirect("/opgaver");
@@ -129,19 +131,17 @@ export async function completeTask(fd: FormData) {
   const forUser = me.role === "parent" ? int(fd, "user_id") : me.id;
   if (!taskId || !forUser) return;
   const task = db().prepare("SELECT * FROM tasks WHERE id = ? AND active = 1").get(taskId) as
-    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; assigned_to: number | null }
+    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; times_per_week: number; assigned_to: number | null }
     | undefined;
   if (!task || (task.assigned_to && task.assigned_to !== forUser)) return;
+  const today = todayLocal();
+  if (!availability(task.repeat, task.times_per_week, completionDates(task.id, forUser), today).allowed) return;
   const period = taskPeriod(task.repeat);
-  const exists = db()
-    .prepare("SELECT 1 FROM task_completions WHERE task_id = ? AND user_id = ? AND period = ? AND status != 'rejected'")
-    .get(task.id, forUser, period);
-  if (exists) return;
   const tx = db().transaction(() => {
     const status = me.role === "parent" ? "approved" : "pending";
     const cid = db()
-      .prepare("INSERT INTO task_completions (task_id, user_id, period, status, amount, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(task.id, forUser, period, status, task.reward, status === "approved" ? me.id : null, status === "approved" ? new Date().toISOString() : null)
+      .prepare("INSERT INTO task_completions (task_id, user_id, period, completed_on, status, amount, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(task.id, forUser, period, today, status, task.reward, status === "approved" ? me.id : null, status === "approved" ? new Date().toISOString() : null)
       .lastInsertRowid;
     if (status === "approved" && task.reward > 0) {
       db().prepare("INSERT INTO ledger (user_id, kind, amount, note, completion_id, created_by) VALUES (?, 'earned', ?, ?, ?, ?)").run(forUser, task.reward, task.title, cid, me.id);
