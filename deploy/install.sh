@@ -27,6 +27,10 @@ systemctl enable --now docker >/dev/null
 say "Henter koden til $DIR"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" pull --ff-only
+  # Kør den netop hentede version af scriptet, så rettelser i selve scriptet tager effekt med det samme.
+  if [ -z "${FAMILIE_REEXEC:-}" ]; then
+    FAMILIE_REEXEC=1 exec bash "$DIR/deploy/install.sh" "$@"
+  fi
 else
   git clone "$REPO" "$DIR"
 fi
@@ -54,17 +58,25 @@ echo "Appen kører på 127.0.0.1:$PORT"
 say "Sætter Apache op for $DOMAIN"
 a2enmod -q proxy proxy_http headers ssl >/dev/null
 
-# Find det certifikat, de eksisterende sites bruger, og genbrug det, hvis det dækker $DOMAIN.
+# Find et gyldigt certifikat til $DOMAIN: først certbots eget, ellers et som de eksisterende sites bruger.
+# (sites-enabled består af symlinks, så der skal bruges grep -R, ikke -r.)
 CERT=""; KEY=""
-while read -r conf; do
-  [ "$conf" = "$SITE" ] && continue
-  c=$(grep -hoP '^\s*SSLCertificateFile\s+\K\S+' "$conf" | head -1 || true)
-  k=$(grep -hoP '^\s*SSLCertificateKeyFile\s+\K\S+' "$conf" | head -1 || true)
-  if [ -n "$c" ] && [ -f "$c" ] && openssl x509 -noout -ext subjectAltName -in "$c" 2>/dev/null \
-      | grep -qE "DNS:(\*\.${DOMAIN#*.}|$DOMAIN)(,|$)"; then
-    CERT="$c"; KEY="${k:-$c}"; break
-  fi
-done < <(grep -rl SSLCertificateFile /etc/apache2/sites-enabled/ 2>/dev/null || true)
+covers() {
+  local san
+  san=$(openssl x509 -noout -ext subjectAltName -in "$1" 2>/dev/null || true)
+  grep -qE "DNS:(\*\.${DOMAIN#*.}|$DOMAIN)(,|$)" <<<"$san"
+}
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  CERT="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"; KEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+else
+  while read -r conf; do
+    c=$(grep -hoP '^\s*SSLCertificateFile\s+\K\S+' "$conf" | head -1 || true)
+    k=$(grep -hoP '^\s*SSLCertificateKeyFile\s+\K\S+' "$conf" | head -1 || true)
+    if [ -n "$c" ] && [ -f "$c" ] && [ "$c" != /etc/ssl/certs/familie-app.crt ] && covers "$c"; then
+      CERT="$c"; KEY="${k:-$c}"; break
+    fi
+  done < <(grep -Rl SSLCertificateFile /etc/apache2/sites-enabled/ 2>/dev/null || true)
+fi
 
 PROXY="    ProxyPreserveHost On
     ProxyPass / http://127.0.0.1:$PORT/
@@ -85,6 +97,9 @@ else
   SELF_SIGNED=1
 fi
 
+SSL_OPTIONS=""
+[ -f /etc/letsencrypt/options-ssl-apache.conf ] && SSL_OPTIONS="    Include /etc/letsencrypt/options-ssl-apache.conf"
+
 cat > "$SITE" <<EOF
 <VirtualHost *:80>
     ServerName $DOMAIN
@@ -95,6 +110,7 @@ $PROXY
     SSLEngine on
     SSLCertificateFile $CERT
     SSLCertificateKeyFile $KEY
+$SSL_OPTIONS
 $PROXY
 </VirtualHost>
 EOF
