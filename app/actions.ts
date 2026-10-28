@@ -256,6 +256,57 @@ export async function saveRecipe(_: FormState, fd: FormData): Promise<FormState>
   redirect(`/opskrifter/${recipeId}`);
 }
 
+export type ImportState = { error?: string; imported?: string[]; skipped?: string[] } | undefined;
+
+/** Importér opskrifter fra en JSON-fil: [{ name, servings, sections: [{ name, instructions, ingredients: [[navn, mængde, enhed]] }] }]. */
+export async function importRecipes(_: ImportState, fd: FormData): Promise<ImportState> {
+  const me = await requireUser();
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Vælg en fil." };
+  let data: unknown;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    return { error: "Filen er ikke gyldig JSON." };
+  }
+  if (!Array.isArray(data)) return { error: "Filen skal indeholde en liste af opskrifter." };
+
+  type In = { name?: unknown; servings?: unknown; sections?: { name?: unknown; instructions?: unknown; ingredients?: unknown[] }[] };
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  const exists = db().prepare("SELECT 1 FROM recipes WHERE name = ? COLLATE NOCASE");
+  const insRecipe = db().prepare("INSERT INTO recipes (name, servings, instructions, created_by) VALUES (?, ?, '', ?)");
+  const insSec = db().prepare("INSERT INTO recipe_sections (recipe_id, name, instructions, position) VALUES (?, ?, ?, ?)");
+  const insIng = db().prepare("INSERT INTO recipe_ingredients (recipe_id, section_id, name, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?)");
+
+  db().transaction(() => {
+    for (const r of data as In[]) {
+      const name = typeof r?.name === "string" ? r.name.trim() : "";
+      if (!name) continue;
+      if (exists.get(name)) {
+        skipped.push(name);
+        continue;
+      }
+      const servings = Math.max(1, Math.round(Number(r.servings) || 4));
+      const recipeId = Number(insRecipe.run(name, servings, me.id).lastInsertRowid);
+      let pos = 0;
+      (Array.isArray(r.sections) ? r.sections : []).forEach((sec, si) => {
+        const secId = Number(insSec.run(recipeId, String(sec?.name ?? "").trim(), String(sec?.instructions ?? "").trim(), si).lastInsertRowid);
+        for (const ing of Array.isArray(sec?.ingredients) ? sec.ingredients : []) {
+          const [n, q, u] = Array.isArray(ing) ? ing : [(ing as { name?: unknown })?.name, (ing as { quantity?: unknown })?.quantity, (ing as { unit?: unknown })?.unit];
+          const ingName = String(n ?? "").trim();
+          if (!ingName) continue;
+          const qty = q === null || q === undefined || q === "" ? null : Number(q);
+          insIng.run(recipeId, secId, ingName, Number.isFinite(qty) ? qty : null, String(u ?? "").trim(), pos++);
+        }
+      });
+      imported.push(name);
+    }
+  })();
+  revalidatePath("/", "layout");
+  return { imported, skipped };
+}
+
 export async function deleteRecipe(fd: FormData) {
   await requireUser();
   db().prepare("DELETE FROM recipes WHERE id = ?").run(int(fd, "id"));

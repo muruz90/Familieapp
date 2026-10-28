@@ -9,7 +9,10 @@ export default async function RecipesPage() {
     <>
       <div className="spread" style={{ marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Opskrifter</h1>
-        <Link className="btn" href="/opskrifter/ny">+ Ny opskrift</Link>
+        <span className="row">
+          <Link className="btn secondary" href="/opskrifter/importer">Importér</Link>
+          <Link className="btn" href="/opskrifter/ny">+ Ny opskrift</Link>
+        </span>
       </div>
       <div className="card">
         {all.length === 0 && <p className="muted">Ingen opskrifter endnu. Opret den første!</p>}
