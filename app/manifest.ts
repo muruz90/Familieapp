@@ -6,8 +6,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Familie",
     start_url: "/",
     display: "standalone",
-    background_color: "#f5f6fa",
-    theme_color: "#4f7cff",
+    background_color: "#12141b",
+    theme_color: "#12141b",
     lang: "da",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
