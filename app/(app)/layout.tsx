@@ -13,8 +13,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="topbar-inner">
           <Link href="/" className="brand">🏡 Familie</Link>
           <div className="who">
-            <span className="dot" style={{ background: user.color }} />
-            {user.name}
+            <Link href="/profil" className="row" style={{ color: "inherit", gap: ".4rem", flexWrap: "nowrap" }} title="Profil og notifikationer">
+              <span className="dot" style={{ background: user.color }} />
+              {user.name}
+            </Link>
             <form action={logout} className="inline">
               <button className="link" type="submit">Log ud</button>
             </form>

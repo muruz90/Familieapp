@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS item_categories (
   category TEXT NOT NULL
 );
 
+-- Telefoner/tablets, der har slået notifikationer til (Web Push).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -165,6 +174,8 @@ function migrate(db: Database.Database) {
   if (!has("recipe_ingredients", "section_id")) {
     db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
   }
+  // Starttidspunktet, der sidst er sendt påmindelse for (så en flyttet aftale får en ny).
+  if (!has("events", "reminded_for")) db.exec("ALTER TABLE events ADD COLUMN reminded_for TEXT");
   if (!has("task_completions", "completed_on")) {
     db.exec("ALTER TABLE task_completions ADD COLUMN completed_on TEXT");
     db.exec("UPDATE task_completions SET completed_on = substr(completed_at, 1, 10) WHERE completed_on IS NULL");

@@ -10,6 +10,7 @@ Webapp til familien: eget login til alle, opgaver og lommepenge, opskrifter, mad
 - **Opskrifter og madplan**: Opskrifter med ingredienser (mængde + enhed). Retter lægges på ugens dage med valgfrit antal personer.
 - **Indkøbsliste**: Ugens retter lægges sammen og skaleres efter antal personer. g/kg og ml/dl/l omregnes, så fx 500 g + 0,4 kg bliver til 900 g. Afkrydsning og ekstra varer.
 - **Kalender**: Fælles kalender. Under *Kalender* er et hemmeligt abonnementslink (webcal), som iPhone/iPad kan abonnere på.
+- **Notifikationer**: Web Push slås til pr. enhed under *Profil* (tryk på dit navn øverst). Besked ved ny opgave, opgave der venter på godkendelse, godkendelse/afvisning, udbetaling/bonus, ny aftale og 1 time før en aftale. På iPhone/iPad (iOS 16.4+) kun når appen er lagt på hjemmeskærmen. VAPID-nøglerne laves automatisk og gemmes i databasen.
 
 ## Udvikling
 

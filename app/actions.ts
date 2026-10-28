@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
-import { parseKr, taskPeriod, todayLocal } from "@/lib/format";
+import { kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
 import { availability } from "@/lib/tasks";
 import { completionDates, listKey } from "@/lib/queries";
 import { isCategory } from "@/lib/categories";
 import { normName } from "@/lib/shopping";
+import { allIds, childIds, notify, parentIds } from "@/lib/push";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
 const int = (fd: FormData, key: string) => {
@@ -120,6 +121,7 @@ export async function saveTask(_: FormState, fd: FormData): Promise<FormState> {
     db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, id);
   } else {
     db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, me.id);
+    await notify(assigned ? [assigned] : childIds(), { title: "Ny opgave", body: reward ? `${title} (${kr(reward)})` : title, url: "/opgaver" });
   }
   revalidatePath("/", "layout");
   if (id) redirect("/opgaver");
@@ -157,6 +159,9 @@ export async function completeTask(fd: FormData) {
     }
   });
   tx();
+  if (me.role !== "parent") {
+    await notify(parentIds(), { title: `${me.name} har lavet en opgave`, body: `${task.title} venter på godkendelse`, url: "/opgaver" });
+  }
   revalidatePath("/", "layout");
 }
 
@@ -189,6 +194,9 @@ export async function reviewCompletion(fd: FormData) {
       db().prepare("INSERT INTO ledger (user_id, kind, amount, note, completion_id, created_by) VALUES (?, 'earned', ?, ?, ?, ?)").run(c.user_id, c.amount, c.title, c.id, me.id);
     }
   })();
+  await notify([c.user_id], approve
+    ? { title: "Opgave godkendt 🎉", body: c.amount > 0 ? `${c.title}: +${kr(c.amount)}` : c.title, url: "/lommepenge" }
+    : { title: "Opgave ikke godkendt", body: `${c.title}: tal med mor eller far`, url: "/opgaver" });
   revalidatePath("/", "layout");
 }
 
@@ -202,6 +210,14 @@ export async function addLedgerEntry(_: FormState, fd: FormData): Promise<FormSt
   if (amount === null || amount === 0) return { error: "Skriv et beløb." };
   if (kind !== "adjust" && amount < 0) return { error: "Beløbet skal være positivt." };
   db().prepare("INSERT INTO ledger (user_id, kind, amount, note, created_by) VALUES (?, ?, ?, ?, ?)").run(userId, kind, amount, str(fd, "note"), me.id);
+  if (kind !== "adjust") {
+    const note = str(fd, "note");
+    await notify([userId], {
+      title: kind === "payout" ? `Udbetalt ${kr(amount)}` : `Bonus: +${kr(amount)} 🎉`,
+      body: note || undefined,
+      url: "/lommepenge",
+    });
+  }
   revalidatePath("/", "layout");
   return {};
 }
@@ -423,6 +439,8 @@ export async function saveEvent(_: FormState, fd: FormData): Promise<FormState> 
   } else {
     db().prepare("INSERT INTO events (uid, title, starts_at, ends_at, all_day, location, notes, user_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(`${crypto.randomUUID()}@familie`, title, start, end, allDay ? 1 : 0, str(fd, "location"), str(fd, "notes"), userId, me.id);
+    const others = (userId ? [userId, ...parentIds()] : allIds()).filter((id) => id !== me.id);
+    await notify(others, { title: `Ny aftale: ${title}`, body: prettyDate(start.slice(0, 10)) + (allDay ? "" : ` kl. ${start.slice(11, 16)}`), url: "/kalender" });
   }
   revalidatePath("/", "layout");
   redirect("/kalender");
@@ -433,4 +451,27 @@ export async function deleteEvent(fd: FormData) {
   db().prepare("DELETE FROM events WHERE id = ?").run(int(fd, "id"));
   revalidatePath("/", "layout");
   redirect("/kalender");
+}
+
+// ---------- Notifikationer ----------
+
+type PushJson = { endpoint?: string; keys?: Record<string, string> };
+
+export async function savePushSubscription(sub: PushJson) {
+  const me = await requireUser();
+  const { endpoint, keys } = sub ?? {};
+  if (!endpoint || !endpoint.startsWith("https://") || !keys?.p256dh || !keys?.auth) return;
+  db()
+    .prepare("INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth")
+    .run(endpoint, me.id, keys.p256dh, keys.auth);
+}
+
+export async function removePushSubscription(endpoint: string) {
+  const me = await requireUser();
+  db().prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?").run(String(endpoint), me.id);
+}
+
+export async function sendTestPush() {
+  const me = await requireUser();
+  await notify([me.id], { title: "Det virker 🎉", body: `Hej ${me.name}, notifikationer er slået til.`, url: "/profil" });
 }
