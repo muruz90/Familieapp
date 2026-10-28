@@ -123,6 +123,12 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(starts_at);
 
+-- Husker, hvilken butikskategori en vare er flyttet til (navn i små bogstaver).
+CREATE TABLE IF NOT EXISTS item_categories (
+  name_key TEXT PRIMARY KEY,
+  category TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

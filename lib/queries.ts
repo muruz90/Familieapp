@@ -1,5 +1,6 @@
 import { db } from "./db";
-import { aggregate, type ShoppingItem } from "./shopping";
+import { aggregate, normName, type ShoppingItem } from "./shopping";
+import { guessCategory, isCategory, type Category } from "./categories";
 import { taskPeriod, todayLocal } from "./format";
 import { availability, type Availability } from "./tasks";
 import type { User } from "./auth";
@@ -157,7 +158,18 @@ export function mealsBetween(from: string, to: string): Meal[] {
     .all(from, to) as Meal[];
 }
 
-export function shoppingList(from: string, to: string): (ShoppingItem & { checked: boolean })[] {
+/** Kategori for en vare: den, familien selv har valgt, ellers appens gæt. */
+export function categoryLookup(): (name: string) => Category {
+  const saved = new Map(
+    (db().prepare("SELECT name_key, category FROM item_categories").all() as { name_key: string; category: string }[]).map((r) => [r.name_key, r.category]),
+  );
+  return (name) => {
+    const c = saved.get(normName(name));
+    return c && isCategory(c) ? c : guessCategory(name);
+  };
+}
+
+export function shoppingList(from: string, to: string): (ShoppingItem & { checked: boolean; category: Category })[] {
   const meals = mealsBetween(from, to);
   const ingStmt = db().prepare("SELECT name, quantity, unit FROM recipe_ingredients WHERE recipe_id = ? ORDER BY position");
   const items = aggregate(
@@ -170,13 +182,18 @@ export function shoppingList(from: string, to: string): (ShoppingItem & { checke
   const checked = new Set(
     (db().prepare("SELECT item_key FROM shopping_checks WHERE list_key = ?").all(listKey(from, to)) as { item_key: string }[]).map((r) => r.item_key),
   );
-  return items.map((i) => ({ ...i, checked: checked.has(i.key) }));
+  const category = categoryLookup();
+  return items.map((i) => ({ ...i, checked: checked.has(i.key), category: category(i.name) }));
 }
 
-export type ExtraItem = { id: number; name: string; quantity: number | null; unit: string; checked: number };
+export type ExtraItem = { id: number; name: string; quantity: number | null; unit: string; checked: number; category: Category };
 
 export function extraItems(): ExtraItem[] {
-  return db().prepare("SELECT id, name, quantity, unit, checked FROM shopping_extra ORDER BY checked, id").all() as ExtraItem[];
+  const category = categoryLookup();
+  return (db().prepare("SELECT id, name, quantity, unit, checked FROM shopping_extra ORDER BY id").all() as Omit<ExtraItem, "category">[]).map((e) => ({
+    ...e,
+    category: category(e.name),
+  }));
 }
 
 export type EventRow = {

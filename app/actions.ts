@@ -8,6 +8,8 @@ import { endSession, hashPassword, requireParent, requireUser, startSession, use
 import { parseKr, taskPeriod, todayLocal } from "@/lib/format";
 import { availability } from "@/lib/tasks";
 import { completionDates, listKey } from "@/lib/queries";
+import { isCategory } from "@/lib/categories";
+import { normName } from "@/lib/shopping";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
 const int = (fd: FormData, key: string) => {
@@ -349,6 +351,15 @@ export async function addExtraItem(fd: FormData) {
   if (!name) return;
   const qty = str(fd, "quantity").replace(",", ".");
   db().prepare("INSERT INTO shopping_extra (name, quantity, unit) VALUES (?, ?, ?)").run(name, qty && Number.isFinite(Number(qty)) ? Number(qty) : null, str(fd, "unit"));
+  revalidatePath("/indkob");
+}
+
+export async function setItemCategory(fd: FormData) {
+  await requireUser();
+  const name = str(fd, "name");
+  const category = str(fd, "category");
+  if (!name || !isCategory(category)) return;
+  db().prepare("INSERT INTO item_categories (name_key, category) VALUES (?, ?) ON CONFLICT(name_key) DO UPDATE SET category = excluded.category").run(normName(name), category);
   revalidatePath("/indkob");
 }
 

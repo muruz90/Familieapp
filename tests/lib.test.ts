@@ -76,3 +76,19 @@ test("ugentlige opgaver: antal pr. uge og mindst X dage imellem", async () => {
   assert.equal(availability("daily", 1, ["2026-10-25"], "2026-10-25").allowed, false);
   assert.equal(availability("once", 1, ["2026-10-01"], "2026-10-25").allowed, false);
 });
+
+test("indkøbslistens varer gættes ind i kategorier", async () => {
+  const { guessCategory } = await import("../lib/categories.ts");
+  const cases: [string, string][] = [
+    ["Hakket oksekød", "Ferskvarer"], ["Hakket grise- og kalvekød", "Ferskvarer"], ["Bacon", "Ferskvarer"], ["Flæskesteg", "Ferskvarer"],
+    ["Mælk", "Mejeri"], ["Smør", "Mejeri"], ["Æg", "Mejeri"], ["Revet ost", "Mejeri"], ["Græsk yoghurt 10%", "Mejeri"], ["Creme fraiche", "Mejeri"],
+    ["Løg", "Frugt og grønt"], ["Hvidløg", "Frugt og grønt"], ["Æble", "Frugt og grønt"], ["Tomater", "Frugt og grønt"], ["Rød peber", "Frugt og grønt"],
+    ["Frisk timian", "Frugt og grønt"], ["Kartofler", "Frugt og grønt"],
+    ["Hakkede tomater", "Tørvarer"], ["Syltet rødkål", "Tørvarer"], ["Majs", "Frugt og grønt"], ["Ris", "Tørvarer"], ["Hvedemel", "Tørvarer"],
+    ["Spaghetti", "Tørvarer"], ["Olivenolie", "Tørvarer"], ["Pizzasovs", "Tørvarer"],
+    ["Groft salt", "Krydderier"], ["Peber", "Krydderier"], ["Karry", "Krydderier"], ["Hønsebouillonpulver", "Krydderier"], ["Laurbærblade", "Krydderier"],
+    ["Pommes frites", "Frost"], ["Burgerboller", "Brød"], ["Fladbrød eller pitabrød", "Brød"], ["Tortillapandekager", "Brød"],
+    ["Toiletpapir", "Nonfood"], ["Topping", "Andet"],
+  ];
+  for (const [name, cat] of cases) assert.equal(guessCategory(name), cat, name);
+});
