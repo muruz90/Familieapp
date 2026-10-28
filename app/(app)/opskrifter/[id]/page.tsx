@@ -25,23 +25,31 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
         <h1 style={{ margin: 0 }}>{r.name}</h1>
         <Link className="btn secondary" href={`/opskrifter/${r.id}?ret=1`}>Ret</Link>
       </div>
-      <div className="card">
-        <h2>Ingredienser <span className="muted">({r.servings} pers.)</span></h2>
-        <ul className="list">
-          {r.ingredients.map((i) => (
-            <li key={i.id} className="spread">
-              <span>{i.name}</span>
-              <span className="muted">{i.quantity !== null ? prettyNumber(i.quantity) : ""} {i.unit}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      {r.instructions && (
-        <div className="card">
-          <h2>Fremgangsmåde</h2>
-          <pre className="plain">{r.instructions}</pre>
+      <p className="muted">{r.servings} personer</p>
+      {r.sections.map((sec, i) => (
+        <div className="card" key={sec.id ?? `s${i}`}>
+          {sec.name && <h2>{sec.name}</h2>}
+          {sec.ingredients.length > 0 && (
+            <>
+              <h3>Ingredienser</h3>
+              <ul className="list" style={{ marginBottom: "1rem" }}>
+                {sec.ingredients.map((ing) => (
+                  <li key={ing.id} className="spread" style={{ padding: ".4rem 0" }}>
+                    <span>{ing.name}</span>
+                    <span className="muted">{ing.quantity !== null ? prettyNumber(ing.quantity) : ""} {ing.unit}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {sec.instructions && (
+            <>
+              <h3>Fremgangsmåde</h3>
+              <pre className="plain">{sec.instructions}</pre>
+            </>
+          )}
         </div>
-      )}
+      ))}
       <form action={deleteRecipe}>
         <input type="hidden" name="id" value={r.id} />
         <button type="submit" className="danger small">Slet opskrift</button>

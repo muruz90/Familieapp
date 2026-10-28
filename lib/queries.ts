@@ -127,11 +127,22 @@ export function recipes(): Recipe[] {
   return db().prepare("SELECT id, name, servings, instructions FROM recipes ORDER BY name COLLATE NOCASE").all() as Recipe[];
 }
 
-export function recipe(id: number): (Recipe & { ingredients: RecipeIngredient[] }) | null {
+export type RecipeSection = { id: number | null; name: string; instructions: string; ingredients: RecipeIngredient[] };
+
+/** En opskrift med sine afsnit (fx Boller, Sovs, Tilbehør). Ældre opskrifter uden afsnit får ét unavngivet afsnit. */
+export function recipe(id: number): (Recipe & { sections: RecipeSection[] }) | null {
   const r = db().prepare("SELECT id, name, servings, instructions FROM recipes WHERE id = ?").get(id) as Recipe | undefined;
   if (!r) return null;
-  const ingredients = db().prepare("SELECT id, name, quantity, unit FROM recipe_ingredients WHERE recipe_id = ? ORDER BY position").all(id) as RecipeIngredient[];
-  return { ...r, ingredients };
+  const sections = db().prepare("SELECT id, name, instructions FROM recipe_sections WHERE recipe_id = ? ORDER BY position").all(id) as Omit<RecipeSection, "ingredients">[];
+  const ingredients = db()
+    .prepare("SELECT id, name, quantity, unit, section_id FROM recipe_ingredients WHERE recipe_id = ? ORDER BY position")
+    .all(id) as (RecipeIngredient & { section_id: number | null })[];
+  const result: RecipeSection[] = sections.map((s) => ({ ...s, ingredients: ingredients.filter((i) => i.section_id === s.id) }));
+  const loose = ingredients.filter((i) => !i.section_id || !sections.some((s) => s.id === i.section_id));
+  if (result.length === 0 || loose.length > 0 || r.instructions) {
+    result.unshift({ id: null, name: "", instructions: r.instructions, ingredients: loose });
+  }
+  return { ...r, sections: result };
 }
 
 export type Meal = { id: number; date: string; recipe_id: number; servings: number; name: string; base_servings: number };

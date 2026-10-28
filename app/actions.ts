@@ -224,24 +224,33 @@ export async function saveRecipe(_: FormState, fd: FormData): Promise<FormState>
   const name = str(fd, "name");
   const servings = Math.max(1, int(fd, "servings") ?? 4);
   if (!name) return { error: "Opskriften skal have et navn." };
+
+  // Afsnit kommer i rækkefølge; hver ingrediens peger på sit afsnit med ing_section (indeks).
+  const secNames = fd.getAll("sec_name").map((v) => String(v).trim());
+  const secInstructions = fd.getAll("sec_instructions").map((v) => String(v).trim());
+  const ingSections = fd.getAll("ing_section").map((v) => Number(v));
   const names = fd.getAll("ing_name").map((v) => String(v).trim());
   const quantities = fd.getAll("ing_quantity").map((v) => String(v).trim().replace(",", "."));
   const units = fd.getAll("ing_unit").map((v) => String(v).trim());
   const ingredients = names
-    .map((n, i) => ({ name: n, quantity: quantities[i] ? Number(quantities[i]) : null, unit: units[i] ?? "" }))
+    .map((n, i) => ({ name: n, quantity: quantities[i] ? Number(quantities[i]) : null, unit: units[i] ?? "", section: ingSections[i] ?? 0 }))
     .filter((i) => i.name);
   if (ingredients.some((i) => i.quantity !== null && !Number.isFinite(i.quantity))) return { error: "En af mængderne er ikke et tal." };
 
   let recipeId = id;
   db().transaction(() => {
     if (recipeId) {
-      db().prepare("UPDATE recipes SET name = ?, servings = ?, instructions = ? WHERE id = ?").run(name, servings, str(fd, "instructions"), recipeId);
+      db().prepare("UPDATE recipes SET name = ?, servings = ?, instructions = '' WHERE id = ?").run(name, servings, recipeId);
       db().prepare("DELETE FROM recipe_ingredients WHERE recipe_id = ?").run(recipeId);
+      db().prepare("DELETE FROM recipe_sections WHERE recipe_id = ?").run(recipeId);
     } else {
-      recipeId = Number(db().prepare("INSERT INTO recipes (name, servings, instructions, created_by) VALUES (?, ?, ?, ?)").run(name, servings, str(fd, "instructions"), me.id).lastInsertRowid);
+      recipeId = Number(db().prepare("INSERT INTO recipes (name, servings, instructions, created_by) VALUES (?, ?, '', ?)").run(name, servings, me.id).lastInsertRowid);
     }
-    const ins = db().prepare("INSERT INTO recipe_ingredients (recipe_id, name, quantity, unit, position) VALUES (?, ?, ?, ?, ?)");
-    ingredients.forEach((i, pos) => ins.run(recipeId, i.name, i.quantity, i.unit, pos));
+    const insSec = db().prepare("INSERT INTO recipe_sections (recipe_id, name, instructions, position) VALUES (?, ?, ?, ?)");
+    const sectionIds = secNames.map((n, pos) => Number(insSec.run(recipeId, n, secInstructions[pos] ?? "", pos).lastInsertRowid));
+    if (sectionIds.length === 0) sectionIds.push(Number(insSec.run(recipeId, "", "", 0).lastInsertRowid));
+    const ins = db().prepare("INSERT INTO recipe_ingredients (recipe_id, section_id, name, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?)");
+    ingredients.forEach((i, pos) => ins.run(recipeId, sectionIds[i.section] ?? sectionIds[0], i.name, i.quantity, i.unit, pos));
   })();
   revalidatePath("/", "layout");
   redirect(`/opskrifter/${recipeId}`);

@@ -68,6 +68,14 @@ CREATE TABLE IF NOT EXISTS recipes (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS recipe_sections (
+  id INTEGER PRIMARY KEY,
+  recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT '',
+  instructions TEXT NOT NULL DEFAULT '',
+  position INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS recipe_ingredients (
   id INTEGER PRIMARY KEY,
   recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
@@ -141,6 +149,9 @@ function migrate(db: Database.Database) {
   const has = (table: string, column: string) =>
     (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
   if (!has("tasks", "times_per_week")) db.exec("ALTER TABLE tasks ADD COLUMN times_per_week INTEGER NOT NULL DEFAULT 1");
+  if (!has("recipe_ingredients", "section_id")) {
+    db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
+  }
   if (!has("task_completions", "completed_on")) {
     db.exec("ALTER TABLE task_completions ADD COLUMN completed_on TEXT");
     db.exec("UPDATE task_completions SET completed_on = substr(completed_at, 1, 10) WHERE completed_on IS NULL");

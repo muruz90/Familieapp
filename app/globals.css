@@ -109,3 +109,4 @@ form.inline { display: inline; }
 .center { max-width: 380px; margin: 10vh auto; }
 pre.plain { white-space: pre-wrap; font: inherit; margin: 0; }
 code { word-break: break-all; background: var(--bg); padding: .15rem .35rem; border-radius: 6px; font-size: .85rem; }
+fieldset.section { border: 1px solid var(--line); border-radius: 12px; padding: .75rem; margin: 0 0 1rem; min-width: 0; }
