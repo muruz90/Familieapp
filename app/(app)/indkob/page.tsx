@@ -7,7 +7,8 @@ import { CATEGORIES } from "@/lib/categories";
 import CategorySelect from "@/components/CategorySelect";
 
 export default async function ShoppingPage({ searchParams }: { searchParams: Promise<{ uge?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
+  const isParent = me.role === "parent";
   const requested = (await searchParams).uge;
   const from = mondayOf(requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayLocal());
   const to = addDays(from, 6);
@@ -51,7 +52,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
                       <div className="muted">{i.recipes.join(", ")}</div>
                     </span>
                   </form>
-                  <CategorySelect name={i.name} category={i.category} plan={{ from, to, item: i.key }} />
+                  {isParent && <CategorySelect name={i.name} category={i.category} plan={{ from, to, item: i.key }} />}
                 </li>
               ))}
               {g.extras.map((e) => (
@@ -65,13 +66,13 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
                       <div className="muted">Ekstra vare</div>
                     </span>
                   </form>
-                  <CategorySelect name={e.name} category={e.category} extraId={e.id} />
+                  {isParent && <CategorySelect name={e.name} category={e.category} extraId={e.id} />}
                 </li>
               ))}
             </ul>
           </section>
         ))}
-        <div className="row" style={{ marginTop: ".75rem", gap: "1rem" }}>
+        {isParent && <div className="row" style={{ marginTop: ".75rem", gap: "1rem" }}>
           {items.some((i) => i.checked) && (
             <form action={resetShoppingChecks}>
               <input type="hidden" name="from" value={from} />
@@ -84,10 +85,10 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
               <button className="link" type="submit">fjern købte ekstra varer</button>
             </form>
           )}
-        </div>
+        </div>}
       </div>
 
-      {atHome.length > 0 && (
+      {isParent && atHome.length > 0 && (
         <details className="card">
           <summary style={{ cursor: "pointer" }}>Har hjemme ({atHome.length})</summary>
           <ul className="list" style={{ marginTop: ".5rem" }}>
@@ -106,7 +107,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
         </details>
       )}
 
-      <div className="card">
+      {isParent && <div className="card">
         <h2>Tilføj ekstra vare</h2>
         <form action={addExtraItem} className="row" style={{ flexWrap: "nowrap" }}>
           <input name="name" placeholder="Fx toiletpapir" required style={{ flex: 3 }} />
@@ -115,7 +116,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
           <button type="submit" className="small">+</button>
         </form>
         <p className="muted" style={{ marginTop: ".5rem" }}>Tryk på ⋯ ved en vare for at fjerne den, fordi I har den hjemme, eller for at flytte den til en anden kategori. Appen husker kategorien til næste gang.</p>
-      </div>
+      </div>}
     </>
   );
 }

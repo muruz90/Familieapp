@@ -5,7 +5,8 @@ import { addMeal, removeMeal } from "@/app/actions";
 import { addDays, mondayOf, prettyDate, todayLocal, weekNumber } from "@/lib/format";
 
 export default async function MealPlanPage({ searchParams }: { searchParams: Promise<{ uge?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
+  const isParent = me.role === "parent";
   const today = todayLocal();
   const requested = (await searchParams).uge;
   const monday = mondayOf(requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : today);
@@ -25,7 +26,7 @@ export default async function MealPlanPage({ searchParams }: { searchParams: Pro
         </span>
       </div>
       <p><Link className="btn" href={`/indkob?uge=${monday}`}>🛒 Indkøbsliste for ugen</Link></p>
-      {all.length === 0 && <p className="muted">Opret først nogle <Link href="/opskrifter/ny">opskrifter</Link>.</p>}
+      {isParent && all.length === 0 && <p className="muted">Opret først nogle <Link href="/opskrifter/ny">opskrifter</Link>.</p>}
       <div className="card">
         {days.map((d) => {
           const dayMeals = meals.filter((m) => m.date === d);
@@ -38,15 +39,17 @@ export default async function MealPlanPage({ searchParams }: { searchParams: Pro
                     <Link href={`/opskrifter/${m.recipe_id}`}>{m.name}</Link>
                     <span className="row">
                       <span className="muted">{m.servings} pers.</span>
-                      <form action={removeMeal} className="inline">
-                        <input type="hidden" name="id" value={m.id} />
-                        <button className="link" type="submit">fjern</button>
-                      </form>
+                      {isParent && (
+                        <form action={removeMeal} className="inline">
+                          <input type="hidden" name="id" value={m.id} />
+                          <button className="link" type="submit">fjern</button>
+                        </form>
+                      )}
                     </span>
                   </li>
                 ))}
               </ul>
-              {all.length > 0 && (
+              {isParent && all.length > 0 && (
                 <form action={addMeal} className="row" style={{ marginTop: ".4rem", flexWrap: "nowrap" }}>
                   <input type="hidden" name="date" value={d} />
                   <select name="recipe_id" required defaultValue="" style={{ flex: 3 }}>

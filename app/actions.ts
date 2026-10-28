@@ -317,7 +317,7 @@ export async function deleteRecipe(fd: FormData) {
 }
 
 export async function addMeal(fd: FormData) {
-  await requireUser();
+  await requireParent();
   const date = str(fd, "date");
   const recipeId = int(fd, "recipe_id");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !recipeId) return;
@@ -329,7 +329,7 @@ export async function addMeal(fd: FormData) {
 }
 
 export async function removeMeal(fd: FormData) {
-  await requireUser();
+  await requireParent();
   db().prepare("DELETE FROM meal_plan WHERE id = ?").run(int(fd, "id"));
   revalidatePath("/", "layout");
 }
@@ -346,7 +346,7 @@ export async function toggleShoppingItem(fd: FormData) {
 }
 
 export async function addExtraItem(fd: FormData) {
-  await requireUser();
+  await requireParent();
   const name = str(fd, "name");
   if (!name) return;
   const qty = str(fd, "quantity").replace(",", ".");
@@ -356,7 +356,7 @@ export async function addExtraItem(fd: FormData) {
 
 /** ⋯-menuen på indkøbslisten: flyt varen til en anden kategori, eller fjern den, fordi man har den hjemme. */
 export async function shoppingItemMenu(fd: FormData) {
-  await requireUser();
+  await requireParent();
   const choice = str(fd, "choice");
   if (choice === "har-hjemme") {
     const extraId = int(fd, "extra_id");
@@ -371,7 +371,7 @@ export async function shoppingItemMenu(fd: FormData) {
 }
 
 export async function unhideShoppingItem(fd: FormData) {
-  await requireUser();
+  await requireParent();
   db().prepare("DELETE FROM shopping_hidden WHERE list_key = ? AND item_key = ?").run(listKey(str(fd, "from"), str(fd, "to")), str(fd, "item"));
   revalidatePath("/indkob");
 }
@@ -383,13 +383,13 @@ export async function toggleExtraItem(fd: FormData) {
 }
 
 export async function clearCheckedExtras() {
-  await requireUser();
+  await requireParent();
   db().prepare("DELETE FROM shopping_extra WHERE checked = 1").run();
   revalidatePath("/indkob");
 }
 
 export async function resetShoppingChecks(fd: FormData) {
-  await requireUser();
+  await requireParent();
   db().prepare("DELETE FROM shopping_checks WHERE list_key = ?").run(listKey(str(fd, "from"), str(fd, "to")));
   revalidatePath("/indkob");
 }
