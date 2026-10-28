@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS shopping_checks (
   PRIMARY KEY (list_key, item_key)
 );
 
+-- Varer fra madplanen, som familien allerede har hjemme, og som derfor er fjernet fra ugens liste.
+CREATE TABLE IF NOT EXISTS shopping_hidden (
+  list_key TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  PRIMARY KEY (list_key, item_key)
+);
+
 CREATE TABLE IF NOT EXISTS shopping_extra (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,

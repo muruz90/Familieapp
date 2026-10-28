@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { extraItems, shoppingList } from "@/lib/queries";
-import { addExtraItem, clearCheckedExtras, resetShoppingChecks, toggleExtraItem, toggleShoppingItem } from "@/app/actions";
+import { addExtraItem, clearCheckedExtras, resetShoppingChecks, toggleExtraItem, toggleShoppingItem, unhideShoppingItem } from "@/app/actions";
 import { addDays, mondayOf, prettyNumber, todayLocal, weekNumber } from "@/lib/format";
 import { CATEGORIES } from "@/lib/categories";
 import CategorySelect from "@/components/CategorySelect";
@@ -11,7 +11,9 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
   const requested = (await searchParams).uge;
   const from = mondayOf(requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayLocal());
   const to = addDays(from, 6);
-  const items = shoppingList(from, to);
+  const all = shoppingList(from, to);
+  const items = all.filter((i) => !i.hidden);
+  const atHome = all.filter((i) => i.hidden);
   const extras = extraItems();
   const remaining = items.filter((i) => !i.checked).length + extras.filter((e) => !e.checked).length;
   const groups = CATEGORIES.map((category) => ({
@@ -32,7 +34,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
       <p className="muted">{remaining === 0 ? (items.length + extras.length ? "Alt er købt ind 🎉" : "Listen er tom.") : `${remaining} varer mangler`}</p>
 
       <div className="card">
-        {items.length === 0 && <p className="muted">Ingen retter på <Link href={`/madplan?uge=${from}`}>madplanen</Link> denne uge.</p>}
+        {all.length === 0 && <p className="muted">Ingen retter på <Link href={`/madplan?uge=${from}`}>madplanen</Link> denne uge.</p>}
         {groups.map((g) => (
           <section key={g.category}>
             <h2 className="cat">{g.category}</h2>
@@ -49,7 +51,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
                       <div className="muted">{i.recipes.join(", ")}</div>
                     </span>
                   </form>
-                  <CategorySelect name={i.name} category={i.category} />
+                  <CategorySelect name={i.name} category={i.category} plan={{ from, to, item: i.key }} />
                 </li>
               ))}
               {g.extras.map((e) => (
@@ -63,7 +65,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
                       <div className="muted">Ekstra vare</div>
                     </span>
                   </form>
-                  <CategorySelect name={e.name} category={e.category} />
+                  <CategorySelect name={e.name} category={e.category} extraId={e.id} />
                 </li>
               ))}
             </ul>
@@ -85,6 +87,25 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
         </div>
       </div>
 
+      {atHome.length > 0 && (
+        <details className="card">
+          <summary style={{ cursor: "pointer" }}>Har hjemme ({atHome.length})</summary>
+          <ul className="list" style={{ marginTop: ".5rem" }}>
+            {atHome.map((i) => (
+              <li key={i.key} className="spread">
+                <span className="muted">{i.amount} {i.name}</span>
+                <form action={unhideShoppingItem}>
+                  <input type="hidden" name="from" value={from} />
+                  <input type="hidden" name="to" value={to} />
+                  <input type="hidden" name="item" value={i.key} />
+                  <button type="submit" className="small secondary">Sæt på listen igen</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <div className="card">
         <h2>Tilføj ekstra vare</h2>
         <form action={addExtraItem} className="row" style={{ flexWrap: "nowrap" }}>
@@ -93,7 +114,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
           <input name="unit" placeholder="Enhed" style={{ flex: 1, minWidth: "4rem" }} />
           <button type="submit" className="small">+</button>
         </form>
-        <p className="muted" style={{ marginTop: ".5rem" }}>Ligger en vare i den forkerte kategori, så vælg den rigtige ude til højre. Appen husker det til næste gang.</p>
+        <p className="muted" style={{ marginTop: ".5rem" }}>Tryk på ⋯ ved en vare for at fjerne den, fordi I har den hjemme, eller for at flytte den til en anden kategori. Appen husker kategorien til næste gang.</p>
       </div>
     </>
   );

@@ -169,7 +169,7 @@ export function categoryLookup(): (name: string) => Category {
   };
 }
 
-export function shoppingList(from: string, to: string): (ShoppingItem & { checked: boolean; category: Category })[] {
+export function shoppingList(from: string, to: string): (ShoppingItem & { checked: boolean; hidden: boolean; category: Category })[] {
   const meals = mealsBetween(from, to);
   const ingStmt = db().prepare("SELECT name, quantity, unit FROM recipe_ingredients WHERE recipe_id = ? ORDER BY position");
   const items = aggregate(
@@ -182,8 +182,11 @@ export function shoppingList(from: string, to: string): (ShoppingItem & { checke
   const checked = new Set(
     (db().prepare("SELECT item_key FROM shopping_checks WHERE list_key = ?").all(listKey(from, to)) as { item_key: string }[]).map((r) => r.item_key),
   );
+  const hidden = new Set(
+    (db().prepare("SELECT item_key FROM shopping_hidden WHERE list_key = ?").all(listKey(from, to)) as { item_key: string }[]).map((r) => r.item_key),
+  );
   const category = categoryLookup();
-  return items.map((i) => ({ ...i, checked: checked.has(i.key), category: category(i.name) }));
+  return items.map((i) => ({ ...i, checked: checked.has(i.key), hidden: hidden.has(i.key), category: category(i.name) }));
 }
 
 export type ExtraItem = { id: number; name: string; quantity: number | null; unit: string; checked: number; category: Category };

@@ -354,12 +354,25 @@ export async function addExtraItem(fd: FormData) {
   revalidatePath("/indkob");
 }
 
-export async function setItemCategory(fd: FormData) {
+/** ⋯-menuen på indkøbslisten: flyt varen til en anden kategori, eller fjern den, fordi man har den hjemme. */
+export async function shoppingItemMenu(fd: FormData) {
   await requireUser();
-  const name = str(fd, "name");
-  const category = str(fd, "category");
-  if (!name || !isCategory(category)) return;
-  db().prepare("INSERT INTO item_categories (name_key, category) VALUES (?, ?) ON CONFLICT(name_key) DO UPDATE SET category = excluded.category").run(normName(name), category);
+  const choice = str(fd, "choice");
+  if (choice === "har-hjemme") {
+    const extraId = int(fd, "extra_id");
+    if (extraId) db().prepare("DELETE FROM shopping_extra WHERE id = ?").run(extraId);
+    else db().prepare("INSERT OR IGNORE INTO shopping_hidden (list_key, item_key) VALUES (?, ?)").run(listKey(str(fd, "from"), str(fd, "to")), str(fd, "item"));
+  } else {
+    const name = str(fd, "name");
+    if (!name || !isCategory(choice)) return;
+    db().prepare("INSERT INTO item_categories (name_key, category) VALUES (?, ?) ON CONFLICT(name_key) DO UPDATE SET category = excluded.category").run(normName(name), choice);
+  }
+  revalidatePath("/indkob");
+}
+
+export async function unhideShoppingItem(fd: FormData) {
+  await requireUser();
+  db().prepare("DELETE FROM shopping_hidden WHERE list_key = ? AND item_key = ?").run(listKey(str(fd, "from"), str(fd, "to")), str(fd, "item"));
   revalidatePath("/indkob");
 }
 
