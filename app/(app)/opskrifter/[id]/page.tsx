@@ -5,6 +5,7 @@ import { recipe as getRecipe } from "@/lib/queries";
 import { deleteRecipe } from "@/app/actions";
 import { prettyNumber } from "@/lib/format";
 import RecipeForm from "@/components/RecipeForm";
+import WakeLockToggle from "@/components/WakeLockToggle";
 
 export default async function RecipePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ret?: string }> }) {
   await requireUser();
@@ -26,6 +27,7 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
         <Link className="btn secondary" href={`/opskrifter/${r.id}?ret=1`}>Ret</Link>
       </div>
       <p className="muted">{r.servings} personer</p>
+      <WakeLockToggle />
       {r.sections.map((sec, i) => (
         <div className="card" key={sec.id ?? `s${i}`}>
           {sec.name && <h2>{sec.name}</h2>}
