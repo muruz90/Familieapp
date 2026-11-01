@@ -292,7 +292,12 @@ export async function importRecipes(_: ImportState, fd: FormData): Promise<Impor
   type In = { name?: unknown; servings?: unknown; sections?: { name?: unknown; instructions?: unknown; ingredients?: unknown[] }[] };
   const imported: string[] = [];
   const skipped: string[] = [];
-  const exists = db().prepare("SELECT 1 FROM recipes WHERE name = ? COLLATE NOCASE");
+  // En opskrift, der allerede findes, springes over, medmindre den er tom (kun et navn): så bliver den udfyldt.
+  const existing = db().prepare(
+    "SELECT r.id, (SELECT count(*) FROM recipe_ingredients i WHERE i.recipe_id = r.id) + (SELECT count(*) FROM recipe_sections s WHERE s.recipe_id = r.id AND s.instructions <> '') + (r.instructions <> '') AS content FROM recipes r WHERE r.name = ? COLLATE NOCASE",
+  );
+  const clearSections = db().prepare("DELETE FROM recipe_sections WHERE recipe_id = ?");
+  const setServings = db().prepare("UPDATE recipes SET servings = ? WHERE id = ?");
   const insRecipe = db().prepare("INSERT INTO recipes (name, servings, instructions, created_by) VALUES (?, ?, '', ?)");
   const insSec = db().prepare("INSERT INTO recipe_sections (recipe_id, name, instructions, position) VALUES (?, ?, ?, ?)");
   const insIng = db().prepare("INSERT INTO recipe_ingredients (recipe_id, section_id, name, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?)");
@@ -301,12 +306,21 @@ export async function importRecipes(_: ImportState, fd: FormData): Promise<Impor
     for (const r of data as In[]) {
       const name = typeof r?.name === "string" ? r.name.trim() : "";
       if (!name) continue;
-      if (exists.get(name)) {
+      const found = existing.get(name) as { id: number; content: number } | undefined;
+      const hasSections = Array.isArray(r.sections) && r.sections.length > 0;
+      if (found && (found.content > 0 || !hasSections)) {
         skipped.push(name);
         continue;
       }
       const servings = Math.max(1, Math.round(Number(r.servings) || 4));
-      const recipeId = Number(insRecipe.run(name, servings, me.id).lastInsertRowid);
+      let recipeId: number;
+      if (found) {
+        recipeId = found.id;
+        clearSections.run(recipeId);
+        setServings.run(servings, recipeId);
+      } else {
+        recipeId = Number(insRecipe.run(name, servings, me.id).lastInsertRowid);
+      }
       let pos = 0;
       (Array.isArray(r.sections) ? r.sections : []).forEach((sec, si) => {
         const secId = Number(insSec.run(recipeId, String(sec?.name ?? "").trim(), String(sec?.instructions ?? "").trim(), si).lastInsertRowid);
