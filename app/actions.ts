@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
-import { kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
+import { addDays, kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
 import { availability } from "@/lib/tasks";
 import { completionDates, listKey } from "@/lib/queries";
 import { isCategory } from "@/lib/categories";
@@ -422,6 +422,35 @@ export async function resetShoppingChecks(fd: FormData) {
   await requireParent();
   db().prepare("DELETE FROM shopping_checks WHERE list_key = ?").run(listKey(str(fd, "from"), str(fd, "to")));
   revalidatePath("/indkob");
+}
+
+export async function saveShoppingPeriod(fd: FormData) {
+  await requireParent();
+  const from = str(fd, "from");
+  const to = str(fd, "to");
+  const date = /^\d{4}-\d{2}-\d{2}$/;
+  if (!date.test(from) || !date.test(to) || to < from || addDays(from, 27) < to) redirect(`/indkob?dato=${encodeURIComponent(str(fd, "old_from") || from)}&fejl=1`);
+  const oldKey = listKey(str(fd, "old_from"), str(fd, "old_to"));
+  const newKey = listKey(from, to);
+  db().transaction(() => {
+    db().prepare("DELETE FROM shopping_periods WHERE from_date <= ? AND to_date >= ?").run(to, from);
+    db().prepare("INSERT INTO shopping_periods (from_date, to_date) VALUES (?, ?)").run(from, to);
+    // Flueben og "har hjemme" følger med, når perioden ændres midt i et indkøb.
+    if (oldKey !== newKey) {
+      db().prepare("INSERT OR IGNORE INTO shopping_checks (list_key, item_key) SELECT ?, item_key FROM shopping_checks WHERE list_key = ?").run(newKey, oldKey);
+      db().prepare("INSERT OR IGNORE INTO shopping_hidden (list_key, item_key) SELECT ?, item_key FROM shopping_hidden WHERE list_key = ?").run(newKey, oldKey);
+    }
+  })();
+  revalidatePath("/indkob");
+  redirect(`/indkob?dato=${from}`);
+}
+
+export async function resetShoppingPeriod(fd: FormData) {
+  await requireParent();
+  const from = str(fd, "from");
+  db().prepare("DELETE FROM shopping_periods WHERE from_date = ?").run(from);
+  revalidatePath("/indkob");
+  redirect(`/indkob?dato=${from}`);
 }
 
 // ---------- Kalender ----------

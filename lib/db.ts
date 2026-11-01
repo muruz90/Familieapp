@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS shopping_hidden (
   PRIMARY KEY (list_key, item_key)
 );
 
+-- Familiens egne indkøbsperioder (fx søndag-lørdag). Uden en egen periode bruges lib/periods.ts' standard.
+CREATE TABLE IF NOT EXISTS shopping_periods (
+  from_date TEXT PRIMARY KEY,
+  to_date TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS shopping_extra (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,

@@ -4,6 +4,7 @@ import { guessCategory, isCategory, type Category } from "./categories";
 import { taskPeriod, todayLocal } from "./format";
 import { availability, type Availability } from "./tasks";
 import type { User } from "./auth";
+import { periodFor, type Period } from "./periods";
 
 export function listKey(from: string, to: string) {
   return `${from}_${to}`;
@@ -167,6 +168,11 @@ export function categoryLookup(): (name: string) => Category {
     const c = saved.get(normName(name));
     return c && isCategory(c) ? c : guessCategory(name);
   };
+}
+
+export function shoppingPeriod(date: string): Period {
+  const saved = db().prepare("SELECT from_date AS \"from\", to_date AS \"to\" FROM shopping_periods").all() as { from: string; to: string }[];
+  return periodFor(date, saved);
 }
 
 export function shoppingList(from: string, to: string): (ShoppingItem & { checked: boolean; hidden: boolean; category: Category })[] {

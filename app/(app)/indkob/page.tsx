@@ -1,17 +1,21 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { extraItems, shoppingList } from "@/lib/queries";
-import { addExtraItem, clearCheckedExtras, resetShoppingChecks, toggleExtraItem, toggleShoppingItem, unhideShoppingItem } from "@/app/actions";
-import { addDays, mondayOf, prettyNumber, todayLocal, weekNumber } from "@/lib/format";
+import { extraItems, shoppingList, shoppingPeriod } from "@/lib/queries";
+import { addExtraItem, clearCheckedExtras, resetShoppingChecks, resetShoppingPeriod, saveShoppingPeriod, toggleExtraItem, toggleShoppingItem, unhideShoppingItem } from "@/app/actions";
+import { addDays, prettyNumber, todayLocal } from "@/lib/format";
 import { CATEGORIES } from "@/lib/categories";
 import CategorySelect from "@/components/CategorySelect";
 
-export default async function ShoppingPage({ searchParams }: { searchParams: Promise<{ uge?: string }> }) {
+const shortDate = new Intl.DateTimeFormat("da-DK", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+const short = (date: string) => shortDate.format(new Date(date + "T12:00:00Z"));
+
+export default async function ShoppingPage({ searchParams }: { searchParams: Promise<{ dato?: string; uge?: string; fejl?: string }> }) {
   const me = await requireUser();
   const isParent = me.role === "parent";
-  const requested = (await searchParams).uge;
-  const from = mondayOf(requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayLocal());
-  const to = addDays(from, 6);
+  const sp = await searchParams;
+  const requested = sp.dato ?? sp.uge;
+  const period = shoppingPeriod(requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayLocal());
+  const { from, to } = period;
   const all = shoppingList(from, to);
   const items = all.filter((i) => !i.hidden);
   const atHome = all.filter((i) => i.hidden);
@@ -26,16 +30,41 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <div className="spread" style={{ marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Indkøb · uge {weekNumber(from)}</h1>
+        <h1 style={{ margin: 0 }}>Indkøb</h1>
         <span className="row">
-          <Link className="btn small secondary" href={`/indkob?uge=${addDays(from, -7)}`}>←</Link>
-          <Link className="btn small secondary" href={`/indkob?uge=${addDays(from, 7)}`}>→</Link>
+          <Link className="btn small secondary" href={`/indkob?dato=${addDays(from, -1)}`} aria-label="Forrige periode">←</Link>
+          <Link className="btn small secondary" href={`/indkob?dato=${addDays(to, 1)}`} aria-label="Næste periode">→</Link>
         </span>
       </div>
-      <p className="muted">{remaining === 0 ? (items.length + extras.length ? "Alt er købt ind 🎉" : "Listen er tom.") : `${remaining} varer mangler`}</p>
+      <p style={{ margin: "0 0 .25rem" }}><strong>{short(from)} – {short(to)}</strong></p>
+      {isParent && (
+        <details className="card" open={sp.fejl === "1"}>
+          <summary style={{ cursor: "pointer" }}>Skift periode</summary>
+          <form action={saveShoppingPeriod} style={{ marginTop: ".5rem" }}>
+            <input type="hidden" name="old_from" value={from} />
+            <input type="hidden" name="old_to" value={to} />
+            <div className="row" style={{ flexWrap: "nowrap" }}>
+              <label style={{ flex: 1 }}>Handler fra<input type="date" name="from" defaultValue={from} required /></label>
+              <label style={{ flex: 1 }}>Til og med<input type="date" name="to" defaultValue={to} required /></label>
+            </div>
+            {sp.fejl === "1" && <p className="error">Sidste dag skal ligge efter første dag, og en periode kan højst være 4 uger.</p>}
+            <button type="submit">Gem periode</button>
+          </form>
+          <p className="muted" style={{ marginTop: ".5rem" }}>
+            Fx søndag til lørdag. De næste perioder fortsætter med 7 dage ad gangen fra den dag, du vælger, indtil du ændrer det igen.
+          </p>
+          {period.saved && (
+            <form action={resetShoppingPeriod}>
+              <input type="hidden" name="from" value={from} />
+              <button className="link" type="submit">brug standardperioden igen</button>
+            </form>
+          )}
+        </details>
+      )}
+      <p className="muted">{remaining === 0 ? (items.length + extras.length ? "Alt er købt ind 🎉" : "Listen er tom.") : `${remaining} ${remaining === 1 ? "vare" : "varer"} mangler`}</p>
 
       <div className="card">
-        {all.length === 0 && <p className="muted">Ingen retter på <Link href={`/madplan?uge=${from}`}>madplanen</Link> denne uge.</p>}
+        {all.length === 0 && <p className="muted">Ingen retter på <Link href={`/madplan?uge=${from}`}>madplanen</Link> i denne periode.</p>}
         {groups.map((g) => (
           <section key={g.category}>
             <h2 className="cat">{g.category}</h2>

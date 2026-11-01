@@ -92,3 +92,19 @@ test("indkøbslistens varer gættes ind i kategorier", async () => {
   ];
   for (const [name, cat] of cases) assert.equal(guessCategory(name), cat, name);
 });
+
+test("indkøbsperioder", async () => {
+  const { periodFor } = await import("../lib/periods.ts");
+  // Ingen egne perioder: mandag-søndag. 2026-11-04 er en onsdag.
+  assert.deepEqual(periodFor("2026-11-04", []), { from: "2026-11-02", to: "2026-11-08", saved: false });
+  // Handler søndag 1/11 til lørdag 7/11; ugerne efter følger søndag-lørdag.
+  const sun = [{ from: "2026-11-01", to: "2026-11-07" }];
+  assert.deepEqual(periodFor("2026-11-04", sun), { from: "2026-11-01", to: "2026-11-07", saved: true });
+  assert.deepEqual(periodFor("2026-11-10", sun), { from: "2026-11-08", to: "2026-11-14", saved: false });
+  // Før den egne periode: almindelig uge, men den stopper dagen før.
+  assert.deepEqual(periodFor("2026-10-28", sun), { from: "2026-10-26", to: "2026-10-31", saved: false });
+  // Fredag 13/11 til onsdag 18/11 midt i rækken: blokken før forkortes, og der fortsættes fra torsdag.
+  const mix = [...sun, { from: "2026-11-13", to: "2026-11-18" }];
+  assert.deepEqual(periodFor("2026-11-09", mix), { from: "2026-11-08", to: "2026-11-12", saved: false });
+  assert.deepEqual(periodFor("2026-11-20", mix), { from: "2026-11-19", to: "2026-11-25", saved: false });
+});
