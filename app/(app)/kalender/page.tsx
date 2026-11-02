@@ -59,13 +59,14 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
             <h3>{prettyDate(day)}</h3>
             <ul className="list">
               {list.map((e) => (
-                <li key={e.id} style={{ padding: ".35rem 0" }}>
+                <li key={`${e.id}-${e.starts_at}`} style={{ padding: ".35rem 0" }}>
                   <Link href={`/kalender?ret=${e.id}`} className="row" style={{ color: "var(--text)", flexWrap: "nowrap" }}>
                     <span className="dot" style={{ background: e.color ?? "var(--muted)" }} />
                     <span className="muted" style={{ minWidth: "3.2rem" }}>{e.all_day ? "Hele dagen" : e.starts_at.slice(11, 16)}</span>
                     <span>
                       <strong>{e.title}</strong>
                       {e.who && <span className="muted"> · {e.who}</span>}
+                      {e.repeat !== "none" && <span className="muted" title="Gentages"> 🔁</span>}
                       {e.location && <div className="muted">{e.location}</div>}
                     </span>
                   </Link>

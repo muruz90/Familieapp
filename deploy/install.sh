@@ -123,8 +123,9 @@ if ! apache2ctl configtest 2>/dev/null; then
 fi
 systemctl reload apache2
 
-say "Daglig backup af databasen (gemmes i 30 dage)"
+say "Daglig backup af databasen (gemmes i 30 dage) og automatisk opdatering om natten"
 cat > /etc/cron.d/familie-app <<EOF
+15 4 * * * root bash $DIR/deploy/auto-update.sh >> /var/log/familie-app-update.log 2>&1
 30 3 * * * root mkdir -p $DIR/data/backup && docker exec familie-app node -e "require('better-sqlite3')('/data/familie.db').backup('/data/backup/familie-'+new Date().toISOString().slice(0,10)+'.db')" && find $DIR/data/backup -name 'familie-*.db' -mtime +30 -delete
 EOF
 
@@ -137,7 +138,8 @@ if [ "$SELF_SIGNED" = 1 ]; then
   echo "  certbot --apache -d $DOMAIN"
 fi
 echo
-echo "Opdatering senere:  bash $DIR/deploy/install.sh"
+echo "Appen opdaterer sig selv hver nat kl. 4.15 (log: /var/log/familie-app-update.log)."
+echo "Opdatering med det samme:  bash $DIR/deploy/install.sh"
 }
 
 main "$@" </dev/null

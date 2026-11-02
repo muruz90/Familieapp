@@ -1,4 +1,5 @@
 import { addDays } from "./format.ts";
+import { rrule } from "./recur.ts";
 
 export type CalEvent = {
   uid: string;
@@ -9,6 +10,8 @@ export type CalEvent = {
   location: string;
   notes: string;
   updated_at: string; // "YYYY-MM-DD HH:MM:SS" UTC fra SQLite
+  repeat?: string;
+  repeat_until?: string | null;
   who?: string | null;
 };
 
@@ -83,6 +86,8 @@ export function buildCalendar(name: string, events: CalEvent[]): string {
       lines.push(`DTSTART;TZID=Europe/Copenhagen:${compactLocal(e.starts_at)}`);
       lines.push(`DTEND;TZID=Europe/Copenhagen:${compactLocal(e.ends_at)}`);
     }
+    const rule = rrule({ ...e, repeat: e.repeat ?? "none", repeat_until: e.repeat_until ?? null });
+    if (rule) lines.push(rule);
     const title = e.who ? `${e.title} (${e.who})` : e.title;
     lines.push(`SUMMARY:${escapeText(title)}`);
     if (e.location) lines.push(`LOCATION:${escapeText(e.location)}`);

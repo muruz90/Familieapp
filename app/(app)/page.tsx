@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { activeTasks, balances, eventsFrom, mealsBetween, pendingCompletions, taskStates } from "@/lib/queries";
+import { activeTasks, balances, eventsFrom, mealsBetween, pendingCompletions, savingsGoals, taskStates } from "@/lib/queries";
+import SavingsGoals from "@/components/SavingsGoals";
 import { completeTask } from "@/app/actions";
 import { kr, prettyDate, todayLocal } from "@/lib/format";
 
@@ -26,6 +27,7 @@ export default async function HomePage() {
             <h2>Mine lommepenge</h2>
             <p className="big" style={{ margin: 0 }}>{kr(mine.balance)}</p>
             <p className="muted" style={{ margin: 0 }}>til gode · tjent i alt {kr(mine.earned)}</p>
+            <SavingsGoals goals={savingsGoals(me.id).slice(0, 1)} balance={mine.balance} userId={me.id} canEdit={false} />
           </Link>
         )}
 

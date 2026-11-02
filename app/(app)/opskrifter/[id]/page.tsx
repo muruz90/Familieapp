@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireParent, requireUser } from "@/lib/auth";
 import { recipe as getRecipe } from "@/lib/queries";
 import { deleteRecipe } from "@/app/actions";
 import { prettyNumber } from "@/lib/format";
@@ -8,10 +8,12 @@ import RecipeForm from "@/components/RecipeForm";
 import WakeLockToggle from "@/components/WakeLockToggle";
 
 export default async function RecipePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ret?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
+  const isParent = me.role === "parent";
   const r = getRecipe(Number((await params).id));
   if (!r) notFound();
   if ((await searchParams).ret) {
+    await requireParent();
     return (
       <>
         <h1>Ret opskrift</h1>
@@ -24,7 +26,7 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
       <p><Link href="/opskrifter">← Opskrifter</Link></p>
       <div className="spread" style={{ marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>{r.name}</h1>
-        <Link className="btn secondary" href={`/opskrifter/${r.id}?ret=1`}>Ret</Link>
+        {isParent && <Link className="btn secondary" href={`/opskrifter/${r.id}?ret=1`}>Ret</Link>}
       </div>
       <p className="muted">{r.servings} personer</p>
       <WakeLockToggle />
@@ -52,10 +54,12 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
           )}
         </div>
       ))}
-      <form action={deleteRecipe}>
-        <input type="hidden" name="id" value={r.id} />
-        <button type="submit" className="danger small">Slet opskrift</button>
-      </form>
+      {isParent && (
+        <form action={deleteRecipe}>
+          <input type="hidden" name="id" value={r.id} />
+          <button type="submit" className="danger small">Slet opskrift</button>
+        </form>
+      )}
     </>
   );
 }

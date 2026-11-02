@@ -1,10 +1,11 @@
 import { db } from "./db";
 import { aggregate, normName, type ShoppingItem } from "./shopping";
 import { guessCategory, isCategory, type Category } from "./categories";
-import { taskPeriod, todayLocal } from "./format";
+import { addDays, taskPeriod, todayLocal } from "./format";
 import { availability, type Availability } from "./tasks";
 import type { User } from "./auth";
 import { periodFor, type Period } from "./periods";
+import { occurrences } from "./recur";
 
 export function listKey(from: string, to: string) {
   return `${from}_${to}`;
@@ -16,6 +17,13 @@ export function members(): User[] {
 
 export function children(): User[] {
   return members().filter((m) => m.role === "child");
+}
+
+export type SavingsGoal = { id: number; user_id: number; title: string; amount: number };
+
+export function savingsGoals(userId?: number): SavingsGoal[] {
+  const sql = "SELECT id, user_id, title, amount FROM savings_goals" + (userId ? " WHERE user_id = ?" : "") + " ORDER BY amount, id";
+  return (userId ? db().prepare(sql).all(userId) : db().prepare(sql).all()) as SavingsGoal[];
 }
 
 export type Balance = { user: User; earned: number; paidOut: number; balance: number };
@@ -215,24 +223,29 @@ export type EventRow = {
   location: string;
   notes: string;
   user_id: number | null;
+  repeat: string;
+  repeat_until: string | null;
   updated_at: string;
   who: string | null;
   color: string | null;
 };
 
-export function eventsFrom(fromDate: string, limit = 200): EventRow[] {
-  return db()
-    .prepare(
-      `SELECT e.*, u.name AS who, u.color FROM events e LEFT JOIN users u ON u.id = e.user_id
-       WHERE substr(e.ends_at, 1, 10) >= ? ORDER BY e.starts_at LIMIT ?`,
-    )
-    .all(fromDate, limit) as EventRow[];
+const EVENTS_SINCE = `SELECT e.*, u.name AS who, u.color FROM events e LEFT JOIN users u ON u.id = e.user_id
+  WHERE (e.repeat = 'none' AND substr(e.ends_at, 1, 10) >= @from) OR (e.repeat <> 'none' AND (e.repeat_until IS NULL OR e.repeat_until >= @from))
+  ORDER BY e.starts_at`;
+
+/** Kommende begivenheder, hvor gentagne aftaler er foldet ud til hver enkelt gang (de næste `days` dage). */
+export function eventsFrom(fromDate: string, limit = 200, days = 180): EventRow[] {
+  const to = addDays(fromDate, days);
+  return (db().prepare(EVENTS_SINCE).all({ from: fromDate }) as EventRow[])
+    .flatMap((e) => occurrences(e, fromDate, to))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+    .slice(0, limit);
 }
 
+/** Til kalender-feedet: én række pr. aftale; gentagelser sendes som RRULE. */
 export function allEventsForFeed(sinceDate: string): EventRow[] {
-  return db()
-    .prepare(`SELECT e.*, u.name AS who, u.color FROM events e LEFT JOIN users u ON u.id = e.user_id WHERE substr(e.ends_at, 1, 10) >= ? ORDER BY e.starts_at`)
-    .all(sinceDate) as EventRow[];
+  return db().prepare(EVENTS_SINCE).all({ from: sinceDate }) as EventRow[];
 }
 
 export function event(id: number): EventRow | null {

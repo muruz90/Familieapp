@@ -3,16 +3,18 @@
 import { useActionState, useState } from "react";
 import { saveEvent } from "@/app/actions";
 import FormMessage from "./FormMessage";
+import { REPEATS } from "@/lib/recur";
 
 type Props = {
   people: { id: number; name: string }[];
   defaultDate: string;
-  event?: { id: number; title: string; starts_at: string; ends_at: string; all_day: number; location: string; notes: string; user_id: number | null };
+  event?: { id: number; title: string; starts_at: string; ends_at: string; all_day: number; location: string; notes: string; user_id: number | null; repeat: string; repeat_until: string | null };
 };
 
 export default function EventForm({ people, defaultDate, event }: Props) {
   const [state, action, pending] = useActionState(saveEvent, undefined);
   const [allDay, setAllDay] = useState(Boolean(event?.all_day));
+  const [repeat, setRepeat] = useState(event?.repeat ?? "none");
   const startDate = event?.starts_at.slice(0, 10) ?? defaultDate;
   const endDate = event?.ends_at.slice(0, 10) ?? defaultDate;
   return (
@@ -41,6 +43,15 @@ export default function EventForm({ people, defaultDate, event }: Props) {
         </label>
         <label>Sted<input name="location" defaultValue={event?.location} /></label>
       </div>
+      <div className="form-grid">
+        <label>Gentag
+          <select name="repeat" value={repeat} onChange={(e) => setRepeat(e.target.value)}>
+            {REPEATS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        {repeat !== "none" && <label>Til og med (valgfri)<input type="date" name="repeat_until" defaultValue={event?.repeat_until ?? ""} /></label>}
+      </div>
+      {event && event.repeat !== "none" && <p className="muted">Ændringer gælder alle gange i serien.</p>}
       <label>Noter<input name="notes" defaultValue={event?.notes} /></label>
       <FormMessage state={state} />
       <div className="row">

@@ -10,6 +10,7 @@ import { availability } from "@/lib/tasks";
 import { completionDates, listKey } from "@/lib/queries";
 import { isCategory } from "@/lib/categories";
 import { normName } from "@/lib/shopping";
+import { isRepeat, REPEATS } from "@/lib/recur";
 import { allIds, childIds, notify, parentIds } from "@/lib/push";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
@@ -234,10 +235,28 @@ export async function deleteLedgerEntry(fd: FormData) {
   revalidatePath("/", "layout");
 }
 
+export async function addSavingsGoal(fd: FormData) {
+  const me = await requireUser();
+  // Børn opretter egne mål; forældre kan oprette for alle børn.
+  const userId = me.role === "parent" ? int(fd, "user_id") : me.id;
+  const title = str(fd, "title");
+  const amount = parseKr(str(fd, "amount"));
+  if (!userId || !title || amount === null || amount <= 0) return;
+  db().prepare("INSERT INTO savings_goals (user_id, title, amount) VALUES (?, ?, ?)").run(userId, title.slice(0, 80), amount);
+  revalidatePath("/", "layout");
+}
+
+export async function deleteSavingsGoal(fd: FormData) {
+  const me = await requireUser();
+  if (me.role === "parent") db().prepare("DELETE FROM savings_goals WHERE id = ?").run(int(fd, "id"));
+  else db().prepare("DELETE FROM savings_goals WHERE id = ? AND user_id = ?").run(int(fd, "id"), me.id);
+  revalidatePath("/", "layout");
+}
+
 // ---------- Opskrifter, madplan og indkøb ----------
 
 export async function saveRecipe(_: FormState, fd: FormData): Promise<FormState> {
-  const me = await requireUser();
+  const me = await requireParent();
   const id = int(fd, "id");
   const name = str(fd, "name");
   const servings = Math.max(1, int(fd, "servings") ?? 4);
@@ -278,7 +297,7 @@ export type ImportState = { error?: string; imported?: string[]; skipped?: strin
 
 /** Importér opskrifter fra en JSON-fil: [{ name, servings, sections: [{ name, instructions, ingredients: [[navn, mængde, enhed]] }] }]. */
 export async function importRecipes(_: ImportState, fd: FormData): Promise<ImportState> {
-  const me = await requireUser();
+  const me = await requireParent();
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Vælg en fil." };
   let data: unknown;
@@ -340,7 +359,7 @@ export async function importRecipes(_: ImportState, fd: FormData): Promise<Impor
 }
 
 export async function deleteRecipe(fd: FormData) {
-  await requireUser();
+  await requireParent();
   db().prepare("DELETE FROM recipes WHERE id = ?").run(int(fd, "id"));
   revalidatePath("/", "layout");
   redirect("/opskrifter");
@@ -355,6 +374,54 @@ export async function addMeal(fd: FormData) {
   if (!recipe) return;
   const servings = Math.max(1, int(fd, "servings") ?? recipe.servings);
   db().prepare("INSERT INTO meal_plan (date, recipe_id, servings) VALUES (?, ?, ?)").run(date, recipeId, servings);
+  revalidatePath("/", "layout");
+}
+
+/** Kopierer sidste uges retter over i ugen, der starter `monday`. Retter, der allerede står på samme dag, springes over. */
+export async function copyLastWeek(fd: FormData) {
+  await requireParent();
+  const monday = str(fd, "monday");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(monday)) return;
+  const meals = db().prepare("SELECT date, recipe_id, servings FROM meal_plan WHERE date BETWEEN ? AND ? ORDER BY id").all(addDays(monday, -7), addDays(monday, -1)) as { date: string; recipe_id: number; servings: number }[];
+  const exists = db().prepare("SELECT 1 FROM meal_plan WHERE date = ? AND recipe_id = ?");
+  const insert = db().prepare("INSERT INTO meal_plan (date, recipe_id, servings) VALUES (?, ?, ?)");
+  db().transaction(() => {
+    for (const m of meals) {
+      const date = addDays(m.date, 7);
+      if (!exists.get(date, m.recipe_id)) insert.run(date, m.recipe_id, m.servings);
+    }
+  })();
+  revalidatePath("/", "layout");
+}
+
+/** Fylder ugens tomme dage (fra i dag og frem) med retter, familien ikke har spist længe. */
+export async function surpriseMe(fd: FormData) {
+  await requireParent();
+  const monday = str(fd, "monday");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(monday)) return;
+  const today = todayLocal();
+  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i)).filter((d) => d >= today);
+  const planned = new Set((db().prepare("SELECT DISTINCT date FROM meal_plan WHERE date BETWEEN ? AND ?").all(monday, addDays(monday, 6)) as { date: string }[]).map((r) => r.date));
+  const empty = days.filter((d) => !planned.has(d));
+  if (!empty.length) return;
+  // Kun opskrifter med mængder (ikke fx en madpakke uden mængder), sorteret efter hvornår de sidst var på madplanen (aldrig først).
+  const candidates = db()
+    .prepare(
+      `SELECT r.id, r.servings, (SELECT max(date) FROM meal_plan m WHERE m.recipe_id = r.id) AS last
+       FROM recipes r WHERE EXISTS (SELECT 1 FROM recipe_ingredients i WHERE i.recipe_id = r.id AND i.quantity IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM meal_plan m WHERE m.recipe_id = r.id AND m.date BETWEEN ? AND ?)`,
+    )
+    .all(monday, addDays(monday, 6)) as { id: number; servings: number; last: string | null }[];
+  const pool = candidates.map((c) => ({ ...c, sortKey: (c.last ?? "0000") + Math.random().toFixed(6) })).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  // Vælg tilfældigt blandt den ældste halvdel, så forslagene varierer fra gang til gang.
+  const oldest = pool.slice(0, Math.max(empty.length, Math.ceil(pool.length / 2))).sort(() => Math.random() - 0.5);
+  const insert = db().prepare("INSERT INTO meal_plan (date, recipe_id, servings) VALUES (?, ?, ?)");
+  db().transaction(() => {
+    empty.forEach((date, i) => {
+      const pick = oldest[i];
+      if (pick) insert.run(date, pick.id, pick.servings);
+    });
+  })();
   revalidatePath("/", "layout");
 }
 
@@ -476,14 +543,17 @@ export async function saveEvent(_: FormState, fd: FormData): Promise<FormState> 
     end = end.slice(0, 16);
   }
   const userId = int(fd, "user_id") || null;
+  const repeat = isRepeat(str(fd, "repeat")) ? str(fd, "repeat") : "none";
+  const until = str(fd, "repeat_until");
+  const repeatUntil = repeat !== "none" && /^\d{4}-\d{2}-\d{2}$/.test(until) && until >= start.slice(0, 10) ? until : null;
   if (id) {
-    db().prepare("UPDATE events SET title = ?, starts_at = ?, ends_at = ?, all_day = ?, location = ?, notes = ?, user_id = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(title, start, end, allDay ? 1 : 0, str(fd, "location"), str(fd, "notes"), userId, id);
+    db().prepare("UPDATE events SET title = ?, starts_at = ?, ends_at = ?, all_day = ?, location = ?, notes = ?, user_id = ?, repeat = ?, repeat_until = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(title, start, end, allDay ? 1 : 0, str(fd, "location"), str(fd, "notes"), userId, repeat, repeatUntil, id);
   } else {
-    db().prepare("INSERT INTO events (uid, title, starts_at, ends_at, all_day, location, notes, user_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(`${crypto.randomUUID()}@familie`, title, start, end, allDay ? 1 : 0, str(fd, "location"), str(fd, "notes"), userId, me.id);
+    db().prepare("INSERT INTO events (uid, title, starts_at, ends_at, all_day, location, notes, user_id, repeat, repeat_until, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(`${crypto.randomUUID()}@familie`, title, start, end, allDay ? 1 : 0, str(fd, "location"), str(fd, "notes"), userId, repeat, repeatUntil, me.id);
     const others = (userId ? [userId, ...parentIds()] : allIds()).filter((id) => id !== me.id);
-    await notify(others, { title: `Ny aftale: ${title}`, body: prettyDate(start.slice(0, 10)) + (allDay ? "" : ` kl. ${start.slice(11, 16)}`), url: "/kalender" });
+    await notify(others, { title: `Ny aftale: ${title}`, body: prettyDate(start.slice(0, 10)) + (allDay ? "" : ` kl. ${start.slice(11, 16)}`) + (repeat !== "none" ? ` (${REPEATS.find(([r]) => r === repeat)![1].toLowerCase()})` : ""), url: "/kalender" });
   }
   revalidatePath("/", "layout");
   redirect("/kalender");

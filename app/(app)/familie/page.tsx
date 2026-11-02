@@ -53,6 +53,14 @@ export default async function FamilyPage() {
       </div>
       <AddMemberForm />
       <PasswordForm />
+      <div className="card">
+        <h2>Backup</h2>
+        <p className="muted">
+          Serveren tager selv en backup hver nat, men den ligger på samme server. Hent en kopi en gang imellem og gem den fx på computeren eller i
+          OneDrive, så I ikke mister noget, hvis serveren går ned.
+        </p>
+        <a className="btn secondary" href="/api/backup" download>⬇️ Hent backup</a>
+      </div>
     </>
   );
 }

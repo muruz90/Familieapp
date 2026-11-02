@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { db, getSetting, setSetting } from "./db";
 import { TZ } from "./format";
+import { occurrences } from "./recur";
 
 export type PushMessage = { title: string; body?: string; url?: string };
 
@@ -69,11 +70,18 @@ export const REMINDER_MINUTES = 60;
 export async function sendEventReminders(now = new Date()): Promise<void> {
   const from = localMinute(now);
   const to = localMinute(new Date(now.getTime() + REMINDER_MINUTES * 60_000));
-  const due = db()
-    .prepare("SELECT id, title, starts_at, location, user_id FROM events WHERE all_day = 0 AND starts_at > ? AND starts_at <= ? AND (reminded_for IS NULL OR reminded_for <> starts_at)")
-    .all(from, to) as { id: number; title: string; starts_at: string; location: string; user_id: number | null }[];
+  const rows = db()
+    .prepare(
+      `SELECT id, title, starts_at, ends_at, location, user_id, repeat, repeat_until, reminded_for FROM events
+       WHERE all_day = 0 AND ((repeat = 'none' AND starts_at > ? AND starts_at <= ?) OR (repeat <> 'none' AND (repeat_until IS NULL OR repeat_until >= ?)))`,
+    )
+    .all(from, to, from.slice(0, 10)) as { id: number; title: string; starts_at: string; ends_at: string; location: string; user_id: number | null; repeat: string; repeat_until: string | null; reminded_for: string | null }[];
+  // Gentagne aftaler foldes ud, så hver gang får sin egen påmindelse.
+  const due = rows
+    .flatMap((e) => occurrences(e, from.slice(0, 10), to.slice(0, 10)))
+    .filter((e) => e.starts_at > from && e.starts_at <= to && e.reminded_for !== e.starts_at);
   for (const e of due) {
-    db().prepare("UPDATE events SET reminded_for = starts_at WHERE id = ?").run(e.id);
+    db().prepare("UPDATE events SET reminded_for = ? WHERE id = ?").run(e.starts_at, e.id);
     const time = e.starts_at.slice(11, 16);
     await notify(e.user_id ? [e.user_id, ...parentIds()] : allIds(), {
       title: `Kl. ${time}: ${e.title}`,

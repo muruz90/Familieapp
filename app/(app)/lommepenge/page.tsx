@@ -1,8 +1,9 @@
 import { requireUser } from "@/lib/auth";
-import { balances, children, ledger } from "@/lib/queries";
+import { balances, children, ledger, savingsGoals } from "@/lib/queries";
 import { deleteLedgerEntry } from "@/app/actions";
 import { kr, prettyDateTime } from "@/lib/format";
 import LedgerForm from "@/components/LedgerForm";
+import SavingsGoals from "@/components/SavingsGoals";
 
 const kindLabel: Record<string, string> = { earned: "Tjent", payout: "Udbetalt", bonus: "Bonus", adjust: "Korrektion" };
 
@@ -12,6 +13,7 @@ export default async function MoneyPage() {
   const all = balances();
   const shown = isParent ? all : all.filter((b) => b.user.id === me.id);
   const rows = ledger(isParent ? undefined : me.id);
+  const goals = savingsGoals(isParent ? undefined : me.id);
 
   return (
     <>
@@ -27,6 +29,7 @@ export default async function MoneyPage() {
               <span>Tjent i alt<br /><strong>{kr(b.earned)}</strong></span>
               <span style={{ textAlign: "right" }}>Udbetalt i alt<br /><strong>{kr(b.paidOut)}</strong></span>
             </div>
+            <SavingsGoals goals={goals.filter((g) => g.user_id === b.user.id)} balance={b.balance} userId={b.user.id} />
           </div>
         ))}
       </div>

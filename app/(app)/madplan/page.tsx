@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { mealsBetween, recipes } from "@/lib/queries";
-import { addMeal, removeMeal } from "@/app/actions";
+import { addMeal, copyLastWeek, removeMeal, surpriseMe } from "@/app/actions";
 import { addDays, mondayOf, prettyDate, todayLocal, weekNumber } from "@/lib/format";
 
 export default async function MealPlanPage({ searchParams }: { searchParams: Promise<{ uge?: string }> }) {
@@ -26,6 +26,18 @@ export default async function MealPlanPage({ searchParams }: { searchParams: Pro
         </span>
       </div>
       <p><Link className="btn" href={`/indkob?uge=${monday}`}>🛒 Indkøbsliste for ugen</Link></p>
+      {isParent && all.length > 0 && (
+        <div className="row" style={{ marginBottom: "1rem" }}>
+          <form action={copyLastWeek}>
+            <input type="hidden" name="monday" value={monday} />
+            <button type="submit" className="small secondary">📋 Kopiér sidste uge</button>
+          </form>
+          <form action={surpriseMe}>
+            <input type="hidden" name="monday" value={monday} />
+            <button type="submit" className="small secondary" title="Fylder ugens tomme dage med retter, I ikke har spist længe">🎲 Overrask mig</button>
+          </form>
+        </div>
+      )}
       {isParent && all.length === 0 && <p className="muted">Opret først nogle <Link href="/opskrifter/ny">opskrifter</Link>.</p>}
       <div className="card">
         {days.map((d) => {

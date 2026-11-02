@@ -151,6 +151,15 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Børnenes sparemål; fremskridtet regnes ud fra saldoen (til gode).
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -181,6 +190,10 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
   }
   // Starttidspunktet, der sidst er sendt påmindelse for (så en flyttet aftale får en ny).
+  if (!has("events", "repeat")) {
+    db.exec("ALTER TABLE events ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'");
+    db.exec("ALTER TABLE events ADD COLUMN repeat_until TEXT");
+  }
   if (!has("events", "reminded_for")) db.exec("ALTER TABLE events ADD COLUMN reminded_for TEXT");
   if (!has("task_completions", "completed_on")) {
     db.exec("ALTER TABLE task_completions ADD COLUMN completed_on TEXT");

@@ -1,8 +1,8 @@
-import { requireUser } from "@/lib/auth";
+import { requireParent } from "@/lib/auth";
 import ImportForm from "@/components/ImportForm";
 
 export default async function ImportPage() {
-  await requireUser();
+  await requireParent();
   return (
     <>
       <h1>Importér opskrifter</h1>

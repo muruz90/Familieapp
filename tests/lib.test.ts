@@ -108,3 +108,16 @@ test("indkøbsperioder", async () => {
   assert.deepEqual(periodFor("2026-11-09", mix), { from: "2026-11-08", to: "2026-11-12", saved: false });
   assert.deepEqual(periodFor("2026-11-20", mix), { from: "2026-11-19", to: "2026-11-25", saved: false });
 });
+
+test("gentagne aftaler", async () => {
+  const { occurrences, rrule } = await import("../lib/recur.ts");
+  const fodbold = { starts_at: "2026-11-04T16:00", ends_at: "2026-11-04T17:00", repeat: "weekly", repeat_until: null, all_day: 0 };
+  assert.deepEqual(occurrences(fodbold, "2026-11-01", "2026-11-20").map((o) => o.starts_at), ["2026-11-04T16:00", "2026-11-11T16:00", "2026-11-18T16:00"]);
+  assert.deepEqual(occurrences({ ...fodbold, repeat: "biweekly" }, "2026-11-10", "2026-12-05").map((o) => o.starts_at), ["2026-11-18T16:00", "2026-12-02T16:00"]);
+  assert.deepEqual(occurrences({ ...fodbold, repeat_until: "2026-11-11" }, "2026-11-01", "2026-12-31").length, 2);
+  assert.deepEqual(occurrences({ ...fodbold, repeat: "none" }, "2026-11-05", "2026-11-30"), []);
+  const maaned = { starts_at: "2026-01-31", ends_at: "2026-01-31", repeat: "monthly", repeat_until: null, all_day: 1 };
+  assert.deepEqual(occurrences(maaned, "2026-01-01", "2026-05-31").map((o) => o.starts_at), ["2026-01-31", "2026-03-31", "2026-05-31"]);
+  assert.equal(rrule({ ...fodbold, repeat: "biweekly", repeat_until: "2026-12-20" }), "RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20261220T225959Z");
+  assert.equal(rrule(fodbold), "RRULE:FREQ=WEEKLY");
+});
