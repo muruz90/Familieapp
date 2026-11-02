@@ -1,11 +1,12 @@
-import { db } from "./db";
+import { db, getSetting } from "./db";
 import { aggregate, normName, type ShoppingItem } from "./shopping";
 import { guessCategory, isCategory, type Category } from "./categories";
-import { addDays, taskPeriod, todayLocal } from "./format";
+import { addDays, mondayOf, taskPeriod, todayLocal } from "./format";
 import { availability, type Availability } from "./tasks";
 import type { User } from "./auth";
 import { periodFor, type Period } from "./periods";
 import { occurrences } from "./recur";
+import { currentStreak } from "./streaks";
 
 export function listKey(from: string, to: string) {
   return `${from}_${to}`;
@@ -17,6 +18,54 @@ export function members(): User[] {
 
 export function children(): User[] {
   return members().filter((m) => m.role === "child");
+}
+
+/** Datoer med mindst én udført opgave (afventende eller godkendt) for et barn. */
+export function activeDays(userId: number, approvedOnly = false): string[] {
+  const statuses = approvedOnly ? "('approved')" : "('approved','pending')";
+  return (db().prepare(`SELECT DISTINCT completed_on AS d FROM task_completions WHERE user_id = ? AND status IN ${statuses} AND completed_on IS NOT NULL`).all(userId) as { d: string }[]).map((r) => r.d);
+}
+
+export function streaks(today = todayLocal()): Map<number, number> {
+  return new Map(children().map((c) => [c.id, currentStreak(activeDays(c.id), today)]));
+}
+
+/** Ugens stjerne: barnet (eller børnene ved lige stilling) med flest godkendte opgaver i denne uge. */
+export function weekStars(today = todayLocal()): { user: User; count: number }[] {
+  const monday = mondayOf(today);
+  const rows = db()
+    .prepare("SELECT user_id, count(*) AS n FROM task_completions WHERE status = 'approved' AND completed_on BETWEEN ? AND ? GROUP BY user_id")
+    .all(monday, addDays(monday, 6)) as { user_id: number; n: number }[];
+  const best = Math.max(0, ...rows.map((r) => r.n));
+  if (!best) return [];
+  const kids = children();
+  return rows.filter((r) => r.n === best).flatMap((r) => {
+    const user = kids.find((k) => k.id === r.user_id);
+    return user ? [{ user, count: r.n }] : [];
+  });
+}
+
+export function streakBonus(): { days: number; amount: number } {
+  return { days: Number(getSetting("streak_days") ?? 0) || 0, amount: Number(getSetting("streak_bonus") ?? 0) || 0 };
+}
+
+export const WEEKDAYS = ["Man", "Tir", "Ons", "Tor", "Fre", "Lør", "Søn"];
+/** 1 = mandag ... 7 = søndag */
+export const isoWeekday = (date: string) => ((new Date(date + "T12:00:00Z").getUTCDay() + 6) % 7) + 1;
+
+export type ChecklistItem = { id: number; title: string; user_id: number | null; weekdays: string; who: string | null };
+
+export function checklistItems(): ChecklistItem[] {
+  return db().prepare("SELECT c.id, c.title, c.user_id, c.weekdays, u.name AS who FROM checklist_items c LEFT JOIN users u ON u.id = c.user_id ORDER BY c.title").all() as ChecklistItem[];
+}
+
+/** Dagens huskeliste for et barn, med flueben. */
+export function checklistFor(userId: number, day: string): (ChecklistItem & { done: boolean })[] {
+  const wd = String(isoWeekday(day));
+  const done = new Set((db().prepare("SELECT item_id FROM checklist_done WHERE user_id = ? AND day = ?").all(userId, day) as { item_id: number }[]).map((r) => r.item_id));
+  return checklistItems()
+    .filter((i) => (i.user_id === null || i.user_id === userId) && i.weekdays.split(",").includes(wd))
+    .map((i) => ({ ...i, done: done.has(i.id) }));
 }
 
 export type SavingsGoal = { id: number; user_id: number; title: string; amount: number };
@@ -130,18 +179,18 @@ export function pendingCompletions(): Completion[] {
     .all() as Completion[];
 }
 
-export type Recipe = { id: number; name: string; servings: number; instructions: string };
+export type Recipe = { id: number; name: string; servings: number; instructions: string; image: string | null };
 export type RecipeIngredient = { id: number; name: string; quantity: number | null; unit: string };
 
 export function recipes(): Recipe[] {
-  return db().prepare("SELECT id, name, servings, instructions FROM recipes ORDER BY name COLLATE NOCASE").all() as Recipe[];
+  return db().prepare("SELECT id, name, servings, instructions, image FROM recipes ORDER BY name COLLATE NOCASE").all() as Recipe[];
 }
 
 export type RecipeSection = { id: number | null; name: string; instructions: string; ingredients: RecipeIngredient[] };
 
 /** En opskrift med sine afsnit (fx Boller, Sovs, Tilbehør). Ældre opskrifter uden afsnit får ét unavngivet afsnit. */
 export function recipe(id: number): (Recipe & { sections: RecipeSection[] }) | null {
-  const r = db().prepare("SELECT id, name, servings, instructions FROM recipes WHERE id = ?").get(id) as Recipe | undefined;
+  const r = db().prepare("SELECT id, name, servings, instructions, image FROM recipes WHERE id = ?").get(id) as Recipe | undefined;
   if (!r) return null;
   const sections = db().prepare("SELECT id, name, instructions FROM recipe_sections WHERE recipe_id = ? ORDER BY position").all(id) as Omit<RecipeSection, "ingredients">[];
   const ingredients = db()
@@ -155,12 +204,12 @@ export function recipe(id: number): (Recipe & { sections: RecipeSection[] }) | n
   return { ...r, sections: result };
 }
 
-export type Meal = { id: number; date: string; recipe_id: number; servings: number; name: string; base_servings: number };
+export type Meal = { id: number; date: string; recipe_id: number; servings: number; name: string; base_servings: number; image: string | null };
 
 export function mealsBetween(from: string, to: string): Meal[] {
   return db()
     .prepare(
-      `SELECT m.id, m.date, m.recipe_id, m.servings, r.name, r.servings AS base_servings
+      `SELECT m.id, m.date, m.recipe_id, m.servings, r.name, r.servings AS base_servings, r.image
        FROM meal_plan m JOIN recipes r ON r.id = m.recipe_id
        WHERE m.date BETWEEN ? AND ? ORDER BY m.date, m.id`,
     )

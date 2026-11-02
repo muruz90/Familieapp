@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
+export const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
 
 const schema = `
 CREATE TABLE IF NOT EXISTS users (
@@ -160,6 +160,28 @@ CREATE TABLE IF NOT EXISTS savings_goals (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Hvilke dage et barn allerede har fået streak-bonus for (så den ikke gives to gange).
+CREATE TABLE IF NOT EXISTS streak_awards (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
+
+-- Huskeliste: faste ting på bestemte ugedage (1 = mandag ... 7 = søndag). user_id NULL = alle børn.
+CREATE TABLE IF NOT EXISTS checklist_items (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  weekdays TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS checklist_done (
+  item_id INTEGER NOT NULL REFERENCES checklist_items(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  PRIMARY KEY (item_id, user_id, day)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -190,6 +212,7 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
   }
   // Starttidspunktet, der sidst er sendt påmindelse for (så en flyttet aftale får en ny).
+  if (!has("recipes", "image")) db.exec("ALTER TABLE recipes ADD COLUMN image TEXT");
   if (!has("events", "repeat")) {
     db.exec("ALTER TABLE events ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'");
     db.exec("ALTER TABLE events ADD COLUMN repeat_until TEXT");

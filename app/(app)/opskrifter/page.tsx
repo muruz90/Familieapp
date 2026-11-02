@@ -21,7 +21,10 @@ export default async function RecipesPage() {
         <ul className="list">
           {all.map((r) => (
             <li key={r.id} className="spread">
-              <Link href={`/opskrifter/${r.id}`}><strong>{r.name}</strong></Link>
+              <Link href={`/opskrifter/${r.id}`} className="row" style={{ flexWrap: "nowrap" }}>
+                {r.image ? <img src={`/api/billede/${r.image}`} alt="" className="thumb" /> : <span className="thumb empty">🍽️</span>}
+                <strong>{r.name}</strong>
+              </Link>
               <span className="muted">{r.servings} pers.</span>
             </li>
           ))}

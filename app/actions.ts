@@ -3,14 +3,16 @@
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, setSetting } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
 import { addDays, kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
 import { availability } from "@/lib/tasks";
-import { completionDates, listKey } from "@/lib/queries";
+import { activeDays, completionDates, listKey, streakBonus } from "@/lib/queries";
+import { streakEndingAt } from "@/lib/streaks";
 import { isCategory } from "@/lib/categories";
 import { normName } from "@/lib/shopping";
 import { isRepeat, REPEATS } from "@/lib/recur";
+import { removeImage, saveRecipeImage } from "@/lib/images";
 import { allIds, childIds, notify, parentIds } from "@/lib/push";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
@@ -160,9 +162,31 @@ export async function completeTask(fd: FormData) {
     }
   });
   tx();
+  if (me.role === "parent") await awardStreak(forUser, today, me.id);
   if (me.role !== "parent") {
     await notify(parentIds(), { title: `${me.name} har lavet en opgave`, body: `${task.title} venter på godkendelse`, url: "/opgaver" });
   }
+  revalidatePath("/", "layout");
+}
+
+/** Giver streak-bonus, når et barn rammer fx 7, 14, 21 ... godkendte dage i træk. */
+async function awardStreak(userId: number, day: string, byId: number) {
+  const { days, amount } = streakBonus();
+  if (days < 2 || amount <= 0) return;
+  const streak = streakEndingAt(activeDays(userId, true), day);
+  if (streak === 0 || streak % days !== 0) return;
+  const fresh = db().prepare("INSERT OR IGNORE INTO streak_awards (user_id, day) VALUES (?, ?)").run(userId, day).changes > 0;
+  if (!fresh) return;
+  db().prepare("INSERT INTO ledger (user_id, kind, amount, note, created_by) VALUES (?, 'bonus', ?, ?, ?)").run(userId, amount, `🔥 ${streak} dage i træk`, byId);
+  await notify([userId], { title: `🔥 ${streak} dage i træk!`, body: `Du har fået ${kr(amount)} i bonus`, url: "/lommepenge" });
+}
+
+export async function saveStreakBonus(fd: FormData) {
+  await requireParent();
+  const days = Math.min(60, Math.max(0, int(fd, "days") ?? 0));
+  const amount = parseKr(str(fd, "amount") || "0") ?? 0;
+  setSetting("streak_days", String(days));
+  setSetting("streak_bonus", String(Math.max(0, amount)));
   revalidatePath("/", "layout");
 }
 
@@ -187,7 +211,7 @@ export async function reviewCompletion(fd: FormData) {
   const approve = str(fd, "decision") === "approve";
   const c = db()
     .prepare("SELECT c.*, t.title FROM task_completions c JOIN tasks t ON t.id = c.task_id WHERE c.id = ? AND c.status = 'pending'")
-    .get(id) as { id: number; user_id: number; amount: number; title: string } | undefined;
+    .get(id) as { id: number; user_id: number; amount: number; title: string; completed_on: string | null } | undefined;
   if (!c) return;
   db().transaction(() => {
     db().prepare("UPDATE task_completions SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?").run(approve ? "approved" : "rejected", me.id, new Date().toISOString(), c.id);
@@ -195,6 +219,7 @@ export async function reviewCompletion(fd: FormData) {
       db().prepare("INSERT INTO ledger (user_id, kind, amount, note, completion_id, created_by) VALUES (?, 'earned', ?, ?, ?, ?)").run(c.user_id, c.amount, c.title, c.id, me.id);
     }
   })();
+  if (approve) await awardStreak(c.user_id, c.completed_on ?? todayLocal(), me.id);
   await notify([c.user_id], approve
     ? { title: "Opgave godkendt 🎉", body: c.amount > 0 ? `${c.title}: +${kr(c.amount)}` : c.title, url: "/lommepenge" }
     : { title: "Opgave ikke godkendt", body: `${c.title}: tal med mor eller far`, url: "/opgaver" });
@@ -253,6 +278,30 @@ export async function deleteSavingsGoal(fd: FormData) {
   revalidatePath("/", "layout");
 }
 
+export async function addChecklistItem(fd: FormData) {
+  await requireParent();
+  const title = str(fd, "title");
+  const days = fd.getAll("weekday").map(String).filter((d) => /^[1-7]$/.test(d));
+  if (!title || days.length === 0) return;
+  db().prepare("INSERT INTO checklist_items (title, user_id, weekdays) VALUES (?, ?, ?)").run(title.slice(0, 80), int(fd, "user_id") || null, [...new Set(days)].sort().join(","));
+  revalidatePath("/", "layout");
+}
+
+export async function deleteChecklistItem(fd: FormData) {
+  await requireParent();
+  db().prepare("DELETE FROM checklist_items WHERE id = ?").run(int(fd, "id"));
+  revalidatePath("/", "layout");
+}
+
+export async function toggleChecklistItem(fd: FormData) {
+  const me = await requireUser();
+  const itemId = int(fd, "id");
+  const day = todayLocal();
+  const done = db().prepare("DELETE FROM checklist_done WHERE item_id = ? AND user_id = ? AND day = ?").run(itemId, me.id, day).changes;
+  if (!done) db().prepare("INSERT OR IGNORE INTO checklist_done (item_id, user_id, day) VALUES (?, ?, ?)").run(itemId, me.id, day);
+  revalidatePath("/");
+}
+
 // ---------- Opskrifter, madplan og indkøb ----------
 
 export async function saveRecipe(_: FormState, fd: FormData): Promise<FormState> {
@@ -289,6 +338,18 @@ export async function saveRecipe(_: FormState, fd: FormData): Promise<FormState>
     const ins = db().prepare("INSERT INTO recipe_ingredients (recipe_id, section_id, name, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?)");
     ingredients.forEach((i, pos) => ins.run(recipeId, sectionIds[i.section] ?? sectionIds[0], i.name, i.quantity, i.unit, pos));
   })();
+
+  const old = (db().prepare("SELECT image FROM recipes WHERE id = ?").get(recipeId) as { image: string | null }).image;
+  const file = fd.get("image");
+  if (file instanceof File && file.size > 0) {
+    const saved = await saveRecipeImage(recipeId!, file);
+    if (!saved) return { error: "Billedet kunne ikke gemmes. Brug et JPEG- eller PNG-billede under 8 MB." };
+    db().prepare("UPDATE recipes SET image = ? WHERE id = ?").run(saved, recipeId);
+    removeImage(old);
+  } else if (fd.get("remove_image") === "on") {
+    db().prepare("UPDATE recipes SET image = NULL WHERE id = ?").run(recipeId);
+    removeImage(old);
+  }
   revalidatePath("/", "layout");
   redirect(`/opskrifter/${recipeId}`);
 }
@@ -360,7 +421,9 @@ export async function importRecipes(_: ImportState, fd: FormData): Promise<Impor
 
 export async function deleteRecipe(fd: FormData) {
   await requireParent();
+  const row = db().prepare("SELECT image FROM recipes WHERE id = ?").get(int(fd, "id")) as { image: string | null } | undefined;
   db().prepare("DELETE FROM recipes WHERE id = ?").run(int(fd, "id"));
+  removeImage(row?.image);
   revalidatePath("/", "layout");
   redirect("/opskrifter");
 }
@@ -443,11 +506,12 @@ export async function toggleShoppingItem(fd: FormData) {
 }
 
 export async function addExtraItem(fd: FormData) {
-  await requireParent();
+  const me = await requireParent();
   const name = str(fd, "name");
   if (!name) return;
   const qty = str(fd, "quantity").replace(",", ".");
   db().prepare("INSERT INTO shopping_extra (name, quantity, unit) VALUES (?, ?, ?)").run(name, qty && Number.isFinite(Number(qty)) ? Number(qty) : null, str(fd, "unit"));
+  await notify(parentIds().filter((id) => id !== me.id), { title: "Ny vare på indkøbslisten", body: `${me.name} har tilføjet ${name}`, url: "/indkob" });
   revalidatePath("/indkob");
 }
 

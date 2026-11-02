@@ -5,6 +5,7 @@ import { addExtraItem, clearCheckedExtras, resetShoppingChecks, resetShoppingPer
 import { addDays, prettyNumber, todayLocal } from "@/lib/format";
 import { CATEGORIES } from "@/lib/categories";
 import CategorySelect from "@/components/CategorySelect";
+import LiveRefresh from "@/components/LiveRefresh";
 
 const shortDate = new Intl.DateTimeFormat("da-DK", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const short = (date: string) => shortDate.format(new Date(date + "T12:00:00Z"));
@@ -29,6 +30,7 @@ export default async function ShoppingPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
+      <LiveRefresh />
       <div className="spread" style={{ marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Indkøb</h1>
         <span className="row">

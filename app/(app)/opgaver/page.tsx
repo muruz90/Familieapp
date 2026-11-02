@@ -1,9 +1,10 @@
 import { requireUser } from "@/lib/auth";
-import { activeTasks, children, pendingCompletions, taskStates } from "@/lib/queries";
-import { archiveTask, completeTask, reviewCompletion, undoCompletion } from "@/app/actions";
+import { activeTasks, checklistItems, children, pendingCompletions, WEEKDAYS, streakBonus, streaks, taskStates, weekStars } from "@/lib/queries";
+import { addChecklistItem, archiveTask, completeTask, deleteChecklistItem, reviewCompletion, saveStreakBonus, undoCompletion } from "@/app/actions";
 import { kr, prettyDate } from "@/lib/format";
 import { repeatText } from "@/lib/taskText";
 import TaskForm from "@/components/TaskForm";
+import StreakCard from "@/components/StreakCard";
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ ret?: string }> }) {
   const me = await requireUser();
@@ -17,6 +18,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const visible = isParent ? tasks : tasks.filter((t) => !t.assigned_to || t.assigned_to === me.id);
   const people = isParent ? kids : [me];
   const states = taskStates(visible, people);
+  const bonus = streakBonus();
 
   return (
     <>
@@ -118,7 +120,62 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </ul>
       </div>
 
+      {people.length > 0 && <StreakCard people={people} streaks={streaks()} stars={weekStars()} bonus={bonus} />}
+
       {isParent && (kids.length > 0 ? <TaskForm kids={kids} task={editing} /> : <p className="muted">Opret børnene under <a href="/familie">Familie</a> først.</p>)}
+      {isParent && kids.length > 0 && (
+        <div className="card">
+          <h2>Huskeliste 🎒</h2>
+          <p className="muted">Faste ting, der står på barnets forside de valgte dage, fx gymnastiktaske om tirsdagen. Barnet får også en besked kl. 7.</p>
+          <ul className="list">
+            {checklistItems().map((c) => (
+              <li key={c.id} className="spread">
+                <span>
+                  <strong>{c.title}</strong>
+                  <div className="muted">
+                    {c.who ?? "Alle børn"} · {c.weekdays === "1,2,3,4,5,6,7" ? "Hver dag" : c.weekdays === "1,2,3,4,5" ? "Hverdage" : c.weekdays.split(",").map((d) => WEEKDAYS[Number(d) - 1]).join(", ")}
+                  </div>
+                </span>
+                <form action={deleteChecklistItem} className="inline">
+                  <input type="hidden" name="id" value={c.id} />
+                  <button className="link" type="submit">slet</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <form action={addChecklistItem} style={{ marginTop: ".75rem" }}>
+            <div className="form-grid">
+              <label>Hvad<input name="title" placeholder="Fx Gymnastiktaske" required /></label>
+              <label>Hvem
+                <select name="user_id" defaultValue="">
+                  <option value="">Alle børn</option>
+                  {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="row" style={{ margin: ".5rem 0" }}>
+              {WEEKDAYS.map((d, i) => (
+                <label key={d} className="check" style={{ gap: ".25rem" }}>
+                  <input type="checkbox" name="weekday" value={i + 1} defaultChecked={i < 5} /> {d}
+                </label>
+              ))}
+            </div>
+            <button type="submit">Tilføj</button>
+          </form>
+        </div>
+      )}
+      {isParent && kids.length > 0 && (
+        <form action={saveStreakBonus} className="card">
+          <h2>Streak-bonus</h2>
+          <p className="muted">Giv en bonus, når et barn har fået godkendt opgaver et antal dage i træk. Sæt dage til 0 for at slå det fra.</p>
+          <div className="form-grid">
+            <label>Dage i træk<input name="days" type="number" min={0} max={60} defaultValue={bonus.days || 7} /></label>
+            <label>Bonus (kr.)<input name="amount" inputMode="decimal" defaultValue={bonus.amount ? String(bonus.amount / 100).replace(".", ",") : ""} placeholder="Fx 10" /></label>
+          </div>
+          <button type="submit">{bonus.days && bonus.amount ? "Gem" : "Slå til"}</button>
+          {bonus.days >= 2 && bonus.amount > 0 && <p className="muted">Slået til: {bonus.days} dage i træk giver {kr(bonus.amount)}.</p>}
+        </form>
+      )}
     </>
   );
 }

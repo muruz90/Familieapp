@@ -90,3 +90,20 @@ export async function sendEventReminders(now = new Date()): Promise<void> {
     });
   }
 }
+
+export const CHECKLIST_TIME = "07:00";
+
+/** Kl. 7 hver morgen: besked til hvert barn med dagens huskeliste. Kaldes hvert minut. */
+export async function sendChecklistMorning(now = new Date()): Promise<void> {
+  const local = localMinute(now);
+  const day = local.slice(0, 10);
+  // Kun om morgenen, så en genstart midt på dagen ikke sender gårsdagens type besked for sent.
+  if (local.slice(11) < CHECKLIST_TIME || local.slice(11) > "09:00" || getSetting("checklist_sent") === day) return;
+  setSetting("checklist_sent", day);
+  const wd = String(((new Date(day + "T12:00:00Z").getUTCDay() + 6) % 7) + 1);
+  const items = db().prepare("SELECT title, user_id, weekdays FROM checklist_items").all() as { title: string; user_id: number | null; weekdays: string }[];
+  for (const child of childIds()) {
+    const today = items.filter((i) => (i.user_id === null || i.user_id === child) && i.weekdays.split(",").includes(wd)).map((i) => i.title);
+    if (today.length) await notify([child], { title: "Husk i dag 🎒", body: today.join(", "), url: "/" });
+  }
+}

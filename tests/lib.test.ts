@@ -121,3 +121,12 @@ test("gentagne aftaler", async () => {
   assert.equal(rrule({ ...fodbold, repeat: "biweekly", repeat_until: "2026-12-20" }), "RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20261220T225959Z");
   assert.equal(rrule(fodbold), "RRULE:FREQ=WEEKLY");
 });
+
+test("streaks", async () => {
+  const { currentStreak, streakEndingAt } = await import("../lib/streaks.ts");
+  const dates = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-10-30"];
+  assert.equal(currentStreak(dates, "2026-11-03"), 3);
+  assert.equal(currentStreak(dates, "2026-11-04"), 3); // i dag ikke nået endnu
+  assert.equal(currentStreak(dates, "2026-11-05"), 0);
+  assert.equal(streakEndingAt(dates, "2026-10-30"), 1);
+});

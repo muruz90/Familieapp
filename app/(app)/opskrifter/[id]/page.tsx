@@ -28,6 +28,7 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
         <h1 style={{ margin: 0 }}>{r.name}</h1>
         {isParent && <Link className="btn secondary" href={`/opskrifter/${r.id}?ret=1`}>Ret</Link>}
       </div>
+      {r.image && <img src={`/api/billede/${r.image}`} alt={r.name} className="recipe-img" />}
       <p className="muted">{r.servings} personer</p>
       <WakeLockToggle />
       {r.sections.map((sec, i) => (

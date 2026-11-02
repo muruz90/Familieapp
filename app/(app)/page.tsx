@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { activeTasks, balances, eventsFrom, mealsBetween, pendingCompletions, savingsGoals, taskStates } from "@/lib/queries";
+import { activeTasks, balances, checklistFor, eventsFrom, mealsBetween, pendingCompletions, savingsGoals, streaks, taskStates, weekStars } from "@/lib/queries";
 import SavingsGoals from "@/components/SavingsGoals";
-import { completeTask } from "@/app/actions";
+import { completeTask, toggleChecklistItem } from "@/app/actions";
 import { kr, prettyDate, todayLocal } from "@/lib/format";
 
 export default async function HomePage() {
@@ -17,10 +17,19 @@ export default async function HomePage() {
   const states = taskStates(tasks, [me]);
   const myTasks = tasks.filter((t) => states.get(`${t.id}:${me.id}`)?.avail.allowed);
   const mine = allBalances.find((b) => b.user.id === me.id);
+  const myStreak = isParent ? 0 : streaks(today).get(me.id) ?? 0;
+  const stars = weekStars(today);
+  const remember = isParent ? [] : checklistFor(me.id, today);
 
   return (
     <>
       <h1>Hej {me.name} 👋</h1>
+      {stars.length > 0 && (
+        <p>
+          ⭐ Ugens stjerne: <strong>{stars.map((s) => s.user.name).join(" og ")}</strong>
+          {stars.some((s) => s.user.id === me.id) && " – godt gået!"}
+        </p>
+      )}
       <div className="grid">
         {!isParent && mine && (
           <Link href="/lommepenge" className="card" style={{ color: "var(--text)" }}>
@@ -31,9 +40,29 @@ export default async function HomePage() {
           </Link>
         )}
 
+        {remember.length > 0 && (
+          <div className="card">
+            <h2>Husk i dag 🎒</h2>
+            <ul className="list">
+              {remember.map((i) => (
+                <li key={i.id}>
+                  <form action={toggleChecklistItem} className="row" style={{ flexWrap: "nowrap" }}>
+                    <input type="hidden" name="id" value={i.id} />
+                    <button type="submit" className={`tick${i.done ? " on" : ""}`} aria-label={i.done ? "Fjern flueben" : "Sæt flueben"}>{i.done ? "✓" : ""}</button>
+                    <span className={i.done ? "done" : undefined}>{i.title}</span>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {!isParent && (
           <div className="card">
-            <h2>Mine opgaver</h2>
+            <div className="spread">
+              <h2>Mine opgaver</h2>
+              {myStreak > 0 && <strong title="Dage i træk med opgaver">🔥 {myStreak}</strong>}
+            </div>
             {myTasks.length === 0 && <p className="muted">Ingen opgaver lige nu 🎉</p>}
             <ul className="list">
               {myTasks.map((t) => (
@@ -73,7 +102,12 @@ export default async function HomePage() {
 
         <Link href="/madplan" className="card" style={{ color: "var(--text)" }}>
           <h2>Aftensmad i dag</h2>
-          {dinner.length === 0 ? <p className="muted">Ikke planlagt endnu</p> : dinner.map((m) => <p key={m.id} className="big" style={{ fontSize: "1.25rem" }}>{m.name}</p>)}
+          {dinner.length === 0 ? <p className="muted">Ikke planlagt endnu</p> : dinner.map((m) => (
+            <div key={m.id}>
+              {m.image && <img src={`/api/billede/${m.image}`} alt="" className="recipe-img" style={{ maxHeight: "10rem" }} />}
+              <p className="big" style={{ fontSize: "1.25rem" }}>{m.name}</p>
+            </div>
+          ))}
         </Link>
 
         <Link href="/kalender" className="card" style={{ color: "var(--text)" }}>
@@ -81,7 +115,7 @@ export default async function HomePage() {
           {events.length === 0 && <p className="muted">Ingen kommende aftaler</p>}
           <ul className="list">
             {events.map((e) => (
-              <li key={e.id} style={{ padding: ".35rem 0" }}>
+              <li key={`${e.id}-${e.starts_at}`} style={{ padding: ".35rem 0" }}>
                 <strong>{e.title}</strong>{e.who && <span className="muted"> · {e.who}</span>}
                 <div className="muted">{prettyDate(e.starts_at.slice(0, 10))}{!e.all_day && ` kl. ${e.starts_at.slice(11, 16)}`}</div>
               </li>

@@ -107,3 +107,8 @@ h2.cat:first-child { margin-top: 0; }
 .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; margin: .35rem 0; }
 .bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 .bar.full > span { background: var(--good); }
+
+/* Opskriftsbilleder */
+.recipe-img { display: block; width: 100%; max-height: 16rem; object-fit: cover; border-radius: var(--radius); margin: 0 0 .75rem; }
+.thumb { width: 2.75rem; height: 2.75rem; border-radius: 10px; object-fit: cover; flex: none; }
+.thumb.empty { display: inline-flex; align-items: center; justify-content: center; background: var(--line); }
