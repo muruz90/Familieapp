@@ -6,9 +6,9 @@ import { redirect } from "next/navigation";
 import { db, setSetting } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
 import { addDays, kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
-import { availability } from "@/lib/tasks";
-import { activeDays, completionDates, listKey, streakBonus } from "@/lib/queries";
-import { streakEndingAt } from "@/lib/streaks";
+import { availability, parseWeekdays } from "@/lib/tasks";
+import { activeDays, completionDates, heldDays, listKey, streakBonus } from "@/lib/queries";
+import { daysBetween, streakEndingAt } from "@/lib/streaks";
 import { isCategory } from "@/lib/categories";
 import { normName } from "@/lib/shopping";
 import { isRepeat, REPEATS } from "@/lib/recur";
@@ -116,14 +116,18 @@ export async function saveTask(_: FormState, fd: FormData): Promise<FormState> {
   const title = str(fd, "title");
   const reward = parseKr(str(fd, "reward") || "0");
   const assigned = int(fd, "assigned_to") || null;
-  const repeat = ["once", "daily", "weekly"].includes(str(fd, "repeat")) ? str(fd, "repeat") : "once";
+  const fixedDays = str(fd, "repeat") === "days";
+  const weekdays = fixedDays ? parseWeekdays(fd.getAll("task_weekday").map(String).join(",")).join(",") : null;
+  if (fixedDays && !weekdays) return { error: "Vælg mindst én ugedag." };
+  const repeat = fixedDays ? "daily" : ["once", "daily", "weekly"].includes(str(fd, "repeat")) ? str(fd, "repeat") : "once";
   const timesPerWeek = repeat === "weekly" ? Math.min(7, Math.max(1, int(fd, "times_per_week") ?? 1)) : 1;
+  const shared = repeat !== "once" && !assigned && fd.get("shared") === "1" ? 1 : 0;
   if (!title) return { error: "Opgaven skal have en titel." };
   if (reward === null || reward < 0) return { error: "Beløbet er ikke gyldigt." };
   if (id) {
-    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, id);
+    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ?, shared = ?, weekdays = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, weekdays, id);
   } else {
-    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, me.id);
+    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, shared, weekdays, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, weekdays, me.id);
     await notify(assigned ? [assigned] : childIds(), { title: "Ny opgave", body: reward ? `${title} (${kr(reward)})` : title, url: "/opgaver" });
   }
   revalidatePath("/", "layout");
@@ -144,12 +148,13 @@ export async function completeTask(fd: FormData) {
   const forUser = me.role === "parent" ? int(fd, "user_id") : me.id;
   if (!taskId || !forUser) return;
   const task = db().prepare("SELECT * FROM tasks WHERE id = ? AND active = 1").get(taskId) as
-    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; times_per_week: number; assigned_to: number | null }
+    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; times_per_week: number; assigned_to: number | null; shared: number; weekdays: string | null }
     | undefined;
   if (!task || (task.assigned_to && task.assigned_to !== forUser)) return;
   const today = todayLocal();
-  const dates = task.repeat === "once" ? completionDates(task.id) : completionDates(task.id, forUser);
-  if (!availability(task.repeat, task.times_per_week, dates, today).allowed) return;
+  const shared = task.repeat === "once" || (!task.assigned_to && !!task.shared);
+  const dates = shared ? completionDates(task.id) : completionDates(task.id, forUser);
+  if (!availability(task.repeat, task.times_per_week, dates, today, parseWeekdays(task.weekdays)).allowed) return;
   const period = taskPeriod(task.repeat);
   const tx = db().transaction(() => {
     const status = me.role === "parent" ? "approved" : "pending";
@@ -173,12 +178,42 @@ export async function completeTask(fd: FormData) {
 async function awardStreak(userId: number, day: string, byId: number) {
   const { days, amount } = streakBonus();
   if (days < 2 || amount <= 0) return;
-  const streak = streakEndingAt(activeDays(userId, true), day);
+  const streak = streakEndingAt(activeDays(userId, true), day, heldDays(userId));
   if (streak === 0 || streak % days !== 0) return;
   const fresh = db().prepare("INSERT OR IGNORE INTO streak_awards (user_id, day) VALUES (?, ?)").run(userId, day).changes > 0;
   if (!fresh) return;
   db().prepare("INSERT INTO ledger (user_id, kind, amount, note, created_by) VALUES (?, 'bonus', ?, ?, ?)").run(userId, amount, `🔥 ${streak} dage i træk`, byId);
   await notify([userId], { title: `🔥 ${streak} dage i træk!`, body: `Du har fået ${kr(amount)} i bonus`, url: "/lommepenge" });
+}
+
+/** Forældre holder et barns streak i live en dag eller en periode, fx når der ikke er nogen opgaver. */
+export async function holdStreak(fd: FormData) {
+  await requireParent();
+  const userId = int(fd, "user_id");
+  const today = todayLocal();
+  const when = str(fd, "when");
+  const sunday = (d: string) => addDays(d, (7 - ((new Date(d + "T12:00:00Z").getUTCDay() + 6) % 7) - 1));
+  const ranges: Record<string, [string, string]> = {
+    today: [today, today],
+    yesterday: [addDays(today, -1), addDays(today, -1)],
+    tomorrow: [addDays(today, 1), addDays(today, 1)],
+    week: [today, sunday(today)],
+    next_week: [addDays(sunday(today), 1), addDays(sunday(today), 7)],
+  };
+  const range = ranges[when];
+  if (!range) return;
+  const ids = userId ? [userId] : (db().prepare("SELECT id FROM users WHERE role = 'child'").all() as { id: number }[]).map((r) => r.id);
+  const ins = db().prepare("INSERT OR IGNORE INTO streak_holds (user_id, day) VALUES (?, ?)");
+  db().transaction(() => {
+    for (const id of ids) for (const d of daysBetween(range[0], range[1])) ins.run(id, d);
+  })();
+  revalidatePath("/", "layout");
+}
+
+export async function removeStreakHolds(fd: FormData) {
+  await requireParent();
+  db().prepare("DELETE FROM streak_holds WHERE user_id = ? AND day >= ?").run(int(fd, "user_id"), todayLocal());
+  revalidatePath("/", "layout");
 }
 
 export async function saveStreakBonus(fd: FormData) {

@@ -167,6 +167,13 @@ CREATE TABLE IF NOT EXISTS streak_awards (
   PRIMARY KEY (user_id, day)
 );
 
+-- Dage hvor forældre holder et barns streak i live (fx når der ikke er opgaver).
+CREATE TABLE IF NOT EXISTS streak_holds (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
+
 -- Huskeliste: faste ting på bestemte ugedage (1 = mandag ... 7 = søndag). user_id NULL = alle børn.
 CREATE TABLE IF NOT EXISTS checklist_items (
   id INTEGER PRIMARY KEY,
@@ -208,6 +215,10 @@ function migrate(db: Database.Database) {
   const has = (table: string, column: string) =>
     (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
   if (!has("tasks", "times_per_week")) db.exec("ALTER TABLE tasks ADD COLUMN times_per_week INTEGER NOT NULL DEFAULT 1");
+  // Fælles opgave: én af børnene tager den pr. periode (dag/uge), og den kommer igen næste periode.
+  if (!has("tasks", "shared")) db.exec("ALTER TABLE tasks ADD COLUMN shared INTEGER NOT NULL DEFAULT 0");
+  // Faste ugedage for en opgave (fx "2,4" = tirsdag og torsdag). Kun for repeat = 'daily'.
+  if (!has("tasks", "weekdays")) db.exec("ALTER TABLE tasks ADD COLUMN weekdays TEXT");
   if (!has("recipe_ingredients", "section_id")) {
     db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
   }
