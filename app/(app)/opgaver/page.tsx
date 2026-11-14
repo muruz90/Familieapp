@@ -60,7 +60,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <div>
                   <strong>{t.title}</strong>
                   <div className="muted">
-                    {repeatText(t.repeat, t.times_per_week, !t.assigned_to && !!t.shared)} · {kr(t.reward)}
+                    {repeatText(t.repeat, t.times_per_week, !t.assigned_to && !!t.shared, t.weekdays)} · {kr(t.reward)}
                     {isParent && ` · ${t.assignee_name ?? "Alle børn"}`}
                   </div>
                   {t.description && <div className="muted">{t.description}</div>}
@@ -107,7 +107,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                             <button className="small" type="submit">{isParent ? `${p.name} har gjort det` : "Færdig ✓"}</button>
                           </form>
                         ) : (
-                          st.avail.nextDate && t.repeat !== "daily" && (
+                          st.avail.nextDate && (t.repeat !== "daily" || !!t.weekdays) && (
                             <span className="muted">{isParent ? `${p.name}: ` : ""}næste gang {prettyDate(st.avail.nextDate).toLowerCase()}</span>
                           )
                         )}

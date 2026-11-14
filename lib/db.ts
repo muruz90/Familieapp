@@ -217,6 +217,8 @@ function migrate(db: Database.Database) {
   if (!has("tasks", "times_per_week")) db.exec("ALTER TABLE tasks ADD COLUMN times_per_week INTEGER NOT NULL DEFAULT 1");
   // Fælles opgave: én af børnene tager den pr. periode (dag/uge), og den kommer igen næste periode.
   if (!has("tasks", "shared")) db.exec("ALTER TABLE tasks ADD COLUMN shared INTEGER NOT NULL DEFAULT 0");
+  // Faste ugedage for en opgave (fx "2,4" = tirsdag og torsdag). Kun for repeat = 'daily'.
+  if (!has("tasks", "weekdays")) db.exec("ALTER TABLE tasks ADD COLUMN weekdays TEXT");
   if (!has("recipe_ingredients", "section_id")) {
     db.exec("ALTER TABLE recipe_ingredients ADD COLUMN section_id INTEGER REFERENCES recipe_sections(id) ON DELETE CASCADE");
   }

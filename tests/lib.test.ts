@@ -151,3 +151,18 @@ test("fælles ugeopgave deles af børnene", async () => {
   assert.equal(a.nextDate, "2026-11-16");
   assert.equal(availability("weekly", 1, ["2026-11-09"], "2026-11-16").allowed, true);
 });
+
+test("fast opgave på faste ugedage", async () => {
+  const { availability } = await import("../lib/tasks.ts");
+  const { daysText } = await import("../lib/taskText.ts");
+  const tirTor = [2, 4];
+  // lørdag 14. nov.: ikke en opgavedag -> næste gang tirsdag 17.
+  assert.deepEqual(availability("daily", 1, [], "2026-11-14", tirTor), { allowed: false, doneInPeriod: 0, nextDate: "2026-11-17" });
+  assert.equal(availability("daily", 1, [], "2026-11-17", tirTor).allowed, true);
+  // gjort tirsdag -> næste gang torsdag 19.
+  assert.equal(availability("daily", 1, ["2026-11-17"], "2026-11-17", tirTor).nextDate, "2026-11-19");
+  // gjort torsdag -> næste uge tirsdag 24.
+  assert.equal(availability("daily", 1, ["2026-11-19"], "2026-11-19", tirTor).nextDate, "2026-11-24");
+  assert.equal(daysText([2, 4]), "Hver tirsdag og torsdag");
+  assert.equal(daysText([1, 3, 5]), "Hver mandag, onsdag og fredag");
+});

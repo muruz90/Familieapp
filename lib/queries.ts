@@ -2,7 +2,7 @@ import { db, getSetting } from "./db";
 import { aggregate, normName, type ShoppingItem } from "./shopping";
 import { guessCategory, isCategory, type Category } from "./categories";
 import { addDays, mondayOf, taskPeriod, todayLocal } from "./format";
-import { availability, type Availability } from "./tasks";
+import { availability, parseWeekdays, type Availability } from "./tasks";
 import type { User } from "./auth";
 import { periodFor, type Period } from "./periods";
 import { occurrences } from "./recur";
@@ -127,6 +127,7 @@ export type Task = {
   repeat: "once" | "daily" | "weekly";
   times_per_week: number;
   shared: number;
+  weekdays: string | null;
   assignee_name: string | null;
 };
 
@@ -178,7 +179,7 @@ export function taskStates(tasks: Task[], kids: User[]): Map<string, TaskState> 
         continue;
       }
       if (shared) {
-        const avail = availability(t.repeat, t.times_per_week, all.map((c) => c.completed_on), today);
+        const avail = availability(t.repeat, t.times_per_week, all.map((c) => c.completed_on), today, parseWeekdays(t.weekdays));
         const others = [...new Set(all.filter((c) => c.period === period && c.user_id !== k.id).map((c) => c.user_name))];
         map.set(`${t.id}:${k.id}`, {
           avail,
@@ -188,7 +189,7 @@ export function taskStates(tasks: Task[], kids: User[]): Map<string, TaskState> 
         continue;
       }
       map.set(`${t.id}:${k.id}`, {
-        avail: availability(t.repeat, t.times_per_week, list.map((c) => c.completed_on), today),
+        avail: availability(t.repeat, t.times_per_week, list.map((c) => c.completed_on), today, parseWeekdays(t.weekdays)),
         current: list.filter((c) => c.period === period),
       });
     }

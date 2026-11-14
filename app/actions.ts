@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db, setSetting } from "@/lib/db";
 import { endSession, hashPassword, requireParent, requireUser, startSession, userCount, verifyLogin } from "@/lib/auth";
 import { addDays, kr, parseKr, prettyDate, taskPeriod, todayLocal } from "@/lib/format";
-import { availability } from "@/lib/tasks";
+import { availability, parseWeekdays } from "@/lib/tasks";
 import { activeDays, completionDates, heldDays, listKey, streakBonus } from "@/lib/queries";
 import { daysBetween, streakEndingAt } from "@/lib/streaks";
 import { isCategory } from "@/lib/categories";
@@ -116,15 +116,18 @@ export async function saveTask(_: FormState, fd: FormData): Promise<FormState> {
   const title = str(fd, "title");
   const reward = parseKr(str(fd, "reward") || "0");
   const assigned = int(fd, "assigned_to") || null;
-  const repeat = ["once", "daily", "weekly"].includes(str(fd, "repeat")) ? str(fd, "repeat") : "once";
+  const fixedDays = str(fd, "repeat") === "days";
+  const weekdays = fixedDays ? parseWeekdays(fd.getAll("task_weekday").map(String).join(",")).join(",") : null;
+  if (fixedDays && !weekdays) return { error: "Vælg mindst én ugedag." };
+  const repeat = fixedDays ? "daily" : ["once", "daily", "weekly"].includes(str(fd, "repeat")) ? str(fd, "repeat") : "once";
   const timesPerWeek = repeat === "weekly" ? Math.min(7, Math.max(1, int(fd, "times_per_week") ?? 1)) : 1;
   const shared = repeat !== "once" && !assigned && fd.get("shared") === "1" ? 1 : 0;
   if (!title) return { error: "Opgaven skal have en titel." };
   if (reward === null || reward < 0) return { error: "Beløbet er ikke gyldigt." };
   if (id) {
-    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ?, shared = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, id);
+    db().prepare("UPDATE tasks SET title = ?, description = ?, reward = ?, assigned_to = ?, repeat = ?, times_per_week = ?, shared = ?, weekdays = ? WHERE id = ?").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, weekdays, id);
   } else {
-    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, shared, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, me.id);
+    db().prepare("INSERT INTO tasks (title, description, reward, assigned_to, repeat, times_per_week, shared, weekdays, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(title, str(fd, "description"), reward, assigned, repeat, timesPerWeek, shared, weekdays, me.id);
     await notify(assigned ? [assigned] : childIds(), { title: "Ny opgave", body: reward ? `${title} (${kr(reward)})` : title, url: "/opgaver" });
   }
   revalidatePath("/", "layout");
@@ -145,13 +148,13 @@ export async function completeTask(fd: FormData) {
   const forUser = me.role === "parent" ? int(fd, "user_id") : me.id;
   if (!taskId || !forUser) return;
   const task = db().prepare("SELECT * FROM tasks WHERE id = ? AND active = 1").get(taskId) as
-    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; times_per_week: number; assigned_to: number | null; shared: number }
+    | { id: number; title: string; reward: number; repeat: "once" | "daily" | "weekly"; times_per_week: number; assigned_to: number | null; shared: number; weekdays: string | null }
     | undefined;
   if (!task || (task.assigned_to && task.assigned_to !== forUser)) return;
   const today = todayLocal();
   const shared = task.repeat === "once" || (!task.assigned_to && !!task.shared);
   const dates = shared ? completionDates(task.id) : completionDates(task.id, forUser);
-  if (!availability(task.repeat, task.times_per_week, dates, today).allowed) return;
+  if (!availability(task.repeat, task.times_per_week, dates, today, parseWeekdays(task.weekdays)).allowed) return;
   const period = taskPeriod(task.repeat);
   const tx = db().transaction(() => {
     const status = me.role === "parent" ? "approved" : "pending";
