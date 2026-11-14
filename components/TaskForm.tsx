@@ -6,13 +6,14 @@ import FormMessage from "./FormMessage";
 
 type Props = {
   kids: { id: number; name: string }[];
-  task?: { id: number; title: string; description: string; reward: number; assigned_to: number | null; repeat: string; times_per_week: number };
+  task?: { id: number; title: string; description: string; reward: number; assigned_to: number | null; repeat: string; times_per_week: number; shared?: number };
 };
 
 export default function TaskForm({ kids, task }: Props) {
   const [state, action, pending] = useActionState(saveTask, undefined);
   const [repeat, setRepeat] = useState(task?.repeat ?? "once");
   const [times, setTimes] = useState(task?.times_per_week ?? 1);
+  const [assigned, setAssigned] = useState(String(task?.assigned_to ?? ""));
   const gap = times >= 2 ? Math.floor(7 / times) : 0;
   return (
     <form action={action} className="card" key={task?.id ?? "new"}>
@@ -23,7 +24,7 @@ export default function TaskForm({ kids, task }: Props) {
       <div className="form-grid">
         <label>Beløb (kr.)<input name="reward" inputMode="decimal" defaultValue={task ? String(task.reward / 100).replace(".", ",") : ""} placeholder="10" /></label>
         <label>Hvem
-          <select name="assigned_to" defaultValue={task?.assigned_to ?? ""}>
+          <select name="assigned_to" value={assigned} onChange={(e) => setAssigned(e.target.value)}>
             <option value="">Alle børn</option>
             {kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
           </select>
@@ -43,6 +44,13 @@ export default function TaskForm({ kids, task }: Props) {
           </label>
         )}
       </div>
+      {repeat !== "once" && assigned === "" && (
+        <label className="check" style={{ margin: ".5rem 0" }}>
+          <input type="checkbox" name="shared" value="1" defaultChecked={!!task?.shared} />
+          Kun ét af børnene skal gøre den {repeat === "weekly" ? "hver uge" : "hver dag"} (fælles opgave)
+        </label>
+      )}
+      {repeat === "weekly" && <p className="muted">Opgaven kommer automatisk igen hver mandag.</p>}
       {repeat === "weekly" && gap > 0 && <p className="muted">Der skal gå mindst {gap} dage mellem hver gang.</p>}
       {repeat === "once" && <p className="muted">Opgaven ligger klar, til et barn tager den. Når den er godkendt, forsvinder den fra listen.</p>}
       <FormMessage state={state} ok={task ? undefined : "Opgaven er oprettet."} />

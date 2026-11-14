@@ -26,8 +26,21 @@ export function activeDays(userId: number, approvedOnly = false): string[] {
   return (db().prepare(`SELECT DISTINCT completed_on AS d FROM task_completions WHERE user_id = ? AND status IN ${statuses} AND completed_on IS NOT NULL`).all(userId) as { d: string }[]).map((r) => r.d);
 }
 
+/** Dage hvor forældre har holdt barnets streak i live. */
+export function heldDays(userId: number): string[] {
+  return (db().prepare("SELECT day FROM streak_holds WHERE user_id = ? ORDER BY day").all(userId) as { day: string }[]).map((r) => r.day);
+}
+
 export function streaks(today = todayLocal()): Map<number, number> {
-  return new Map(children().map((c) => [c.id, currentStreak(activeDays(c.id), today)]));
+  return new Map(children().map((c) => [c.id, currentStreak(activeDays(c.id), today, heldDays(c.id))]));
+}
+
+/** Kommende (fra og med i dag) dage, hvor streaken holdes i live, pr. barn. */
+export function upcomingHolds(today = todayLocal()): Map<number, string[]> {
+  const rows = db().prepare("SELECT user_id, day FROM streak_holds WHERE day >= ? ORDER BY day").all(today) as { user_id: number; day: string }[];
+  const map = new Map<number, string[]>();
+  for (const r of rows) map.set(r.user_id, [...(map.get(r.user_id) ?? []), r.day]);
+  return map;
 }
 
 /** Ugens stjerne: barnet (eller børnene ved lige stilling) med flest godkendte opgaver i denne uge. */
@@ -113,6 +126,7 @@ export type Task = {
   assigned_to: number | null;
   repeat: "once" | "daily" | "weekly";
   times_per_week: number;
+  shared: number;
   assignee_name: string | null;
 };
 
@@ -153,11 +167,24 @@ export function taskStates(tasks: Task[], kids: User[]): Map<string, TaskState> 
     const period = taskPeriod(t.repeat);
     // En fri opgave kan kun tages af ét barn; de andre ser, hvem der har taget den.
     const taker = t.repeat === "once" ? rows.find((r) => r.task_id === t.id) : undefined;
+    // En fælles dags-/ugeopgave deles af børnene: hvem der end gør den, tæller for alle i perioden.
+    const shared = t.repeat !== "once" && !t.assigned_to && !!t.shared;
+    const all = shared ? rows.filter((r) => r.task_id === t.id) : [];
     for (const k of kids) {
       if (t.assigned_to && t.assigned_to !== k.id) continue;
       const list = grouped.get(`${t.id}:${k.id}`) ?? [];
       if (taker && taker.user_id !== k.id) {
         map.set(`${t.id}:${k.id}`, { avail: { allowed: false, doneInPeriod: 0 }, current: [], takenBy: taker.user_name });
+        continue;
+      }
+      if (shared) {
+        const avail = availability(t.repeat, t.times_per_week, all.map((c) => c.completed_on), today);
+        const others = [...new Set(all.filter((c) => c.period === period && c.user_id !== k.id).map((c) => c.user_name))];
+        map.set(`${t.id}:${k.id}`, {
+          avail,
+          current: list.filter((c) => c.period === period),
+          takenBy: !avail.allowed && others.length ? others.join(" og ") : undefined,
+        });
         continue;
       }
       map.set(`${t.id}:${k.id}`, {

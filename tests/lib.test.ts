@@ -130,3 +130,24 @@ test("streaks", async () => {
   assert.equal(currentStreak(dates, "2026-11-05"), 0);
   assert.equal(streakEndingAt(dates, "2026-10-30"), 1);
 });
+
+test("streak holdt i live af forældre", async () => {
+  const { currentStreak, streakEndingAt, daysBetween } = await import("../lib/streaks.ts");
+  const dates = ["2026-11-01", "2026-11-02", "2026-11-05"];
+  assert.equal(currentStreak(dates, "2026-11-05"), 1);
+  // 3. og 4. nov. holdt i live: streaken fortsætter, men pausedagene tæller ikke med
+  assert.equal(currentStreak(dates, "2026-11-05", ["2026-11-03", "2026-11-04"]), 3);
+  // i dag holdt i live uden opgaver
+  assert.equal(currentStreak(["2026-11-04"], "2026-11-06", ["2026-11-05", "2026-11-06"]), 1);
+  assert.equal(streakEndingAt([], "2026-11-06", ["2026-11-06"]), 0);
+  assert.deepEqual(daysBetween("2026-11-14", "2026-11-16"), ["2026-11-14", "2026-11-15", "2026-11-16"]);
+});
+
+test("fælles ugeopgave deles af børnene", async () => {
+  const { availability } = await import("../lib/tasks.ts");
+  // Emil har gjort den mandag; for Ida (fælles datoer) er den taget denne uge og kommer igen næste mandag
+  const a = availability("weekly", 1, ["2026-11-09"], "2026-11-12");
+  assert.equal(a.allowed, false);
+  assert.equal(a.nextDate, "2026-11-16");
+  assert.equal(availability("weekly", 1, ["2026-11-09"], "2026-11-16").allowed, true);
+});

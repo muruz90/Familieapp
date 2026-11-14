@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { activeTasks, checklistItems, children, pendingCompletions, WEEKDAYS, streakBonus, streaks, taskStates, weekStars } from "@/lib/queries";
+import { activeTasks, checklistItems, children, pendingCompletions, WEEKDAYS, streakBonus, streaks, taskStates, upcomingHolds, weekStars } from "@/lib/queries";
 import { addChecklistItem, archiveTask, completeTask, deleteChecklistItem, reviewCompletion, saveStreakBonus, undoCompletion } from "@/app/actions";
 import { kr, prettyDate } from "@/lib/format";
 import { repeatText } from "@/lib/taskText";
@@ -60,7 +60,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                 <div>
                   <strong>{t.title}</strong>
                   <div className="muted">
-                    {repeatText(t.repeat, t.times_per_week)} · {kr(t.reward)}
+                    {repeatText(t.repeat, t.times_per_week, !t.assigned_to && !!t.shared)} · {kr(t.reward)}
                     {isParent && ` · ${t.assignee_name ?? "Alle børn"}`}
                   </div>
                   {t.description && <div className="muted">{t.description}</div>}
@@ -99,7 +99,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
                         {t.repeat === "weekly" && t.times_per_week > 1 && (
                           <span className="muted">{st.avail.doneInPeriod}/{t.times_per_week} denne uge</span>
                         )}
-                        {st.takenBy && !isParent && <span className="muted">{st.takenBy} har taget den</span>}
+                        {st.takenBy && (!isParent || t.repeat !== "once") && <span className="muted">{isParent ? `${p.name}: ` : ""}{st.takenBy} har taget den</span>}
                         {st.avail.allowed ? (
                           <form action={completeTask} className="inline">
                             <input type="hidden" name="task_id" value={t.id} />
@@ -120,7 +120,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </ul>
       </div>
 
-      {people.length > 0 && <StreakCard people={people} streaks={streaks()} stars={weekStars()} bonus={bonus} />}
+      {people.length > 0 && <StreakCard people={people} streaks={streaks()} stars={weekStars()} bonus={bonus} holds={upcomingHolds()} canHold={isParent} />}
 
       {isParent && (kids.length > 0 ? <TaskForm kids={kids} task={editing} /> : <p className="muted">Opret børnene under <a href="/familie">Familie</a> først.</p>)}
       {isParent && kids.length > 0 && (
